@@ -168,6 +168,305 @@ Initial prompt output should be structured:
 }
 ```
 
+### Multi-Provider VLM Selection
+
+Goal: replace the hard-coded NVIDIA image-to-prompt model setting with a two-level provider/model selector so the same image prompt extraction workflow can use NVIDIA, Gemini AI Studio API, LM Studio, or Ollama.
+
+This feature applies to image-to-text/image-to-prompt VLM usage first: initial prompt extraction, pose/action audit, and prompt refinement. Prompt-to-image generation remains a separate provider path.
+
+#### UX Requirements
+
+First-level dropdown: platform/provider.
+
+Initial provider options:
+
+- `nvidia`: NVIDIA hosted OpenAI-compatible API.
+- `gemini`: Google Gemini AI Studio API.
+- `lm_studio`: local LM Studio OpenAI-compatible server.
+- `ollama`: local Ollama server.
+
+Second-level panel changes based on selected provider:
+
+- Connection URL input where the provider supports custom URLs.
+- API key/password input where required or optional.
+- Model dropdown with available models first, then unavailable/reference models.
+- Connection test/status badge.
+- Read-only source labels showing whether a value came from `.env`, user runtime override, provider discovery, or built-in reference catalog.
+- Secret textboxes must use password masking by default and expose a reveal toggle only if needed.
+- The user can choose `.env` values or type temporary runtime values. Runtime values must not be written to `.env` unless a future explicit save feature is requested.
+
+Model dropdown behavior:
+
+- Always render a model list even when the key or local server is unavailable.
+- Available models are sorted above unavailable/reference models.
+- Unavailable/reference models remain selectable only if the user explicitly enables advanced/manual mode, or they appear disabled with a reason.
+- Each model row should show provider, model id, availability, capability hints, and an optional failure reason.
+
+Minimum model metadata shape:
+
+```json
+{
+  "id": "nvidia/nemotron-nano-12b-v2-vl",
+  "display_name": "Nemotron Nano 12B VL",
+  "provider": "nvidia",
+  "available": true,
+  "capabilities": ["image_to_text", "chat_completions"],
+  "source": "provider_discovery",
+  "reason": null
+}
+```
+
+#### Backend Design
+
+Add a provider abstraction for image-to-prompt VLMs.
+
+Recommended modules:
+
+```text
+backend/app/clients/vlm/
+  __init__.py
+  base.py
+  registry.py
+  nvidia_provider.py
+  gemini_provider.py
+  lm_studio_provider.py
+  ollama_provider.py
+```
+
+Provider interface:
+
+```python
+class VlmProvider:
+    provider_id: str
+
+    def list_models(self, connection: VlmConnectionSettings) -> list[VlmModelInfo]:
+        ...
+
+    def generate_initial_prompt(self, image_data_url: str, settings: VlmRunSettings) -> PromptExtractionResult:
+        ...
+
+    def classify_pose_and_motion(self, image_data_url: str, settings: VlmRunSettings) -> dict:
+        ...
+
+    def refine_prompt(
+        self,
+        original_image_data_url: str,
+        generated_image: Image.Image,
+        previous_prompt: str,
+        previous_negative_prompt: str,
+        similarity_report: SimilarityScore,
+        settings: VlmRunSettings,
+    ) -> PromptExtractionResult:
+        ...
+```
+
+Shared schemas to add under `backend/app/models/schemas.py`:
+
+- `VlmProviderId`: enum/string literal for `nvidia`, `gemini`, `lm_studio`, `ollama`.
+- `VlmConnectionSettings`: provider id, base URL, API key redacted flag, selected model, timeout.
+- `VlmModelInfo`: id, display name, provider, available, capabilities, source, reason.
+- `VlmProviderConfigResponse`: provider metadata, env defaults, required fields, optional fields.
+- `VlmModelListResponse`: selected provider, connection status, available models, unavailable models.
+- `VlmSelection`: provider, model, base URL override, API key override.
+
+Connection settings:
+
+- Never return raw API keys from backend responses.
+- Allow runtime API key overrides only for the current request/session.
+- Prefer `.env` values when runtime override is absent.
+- Log provider id, model id, URL host, and availability only; never log secrets.
+
+Provider default settings:
+
+```env
+VLM_PROVIDER=nvidia
+VLM_MODEL=nvidia/nemotron-nano-12b-v2-vl
+
+NVIDIA_API_KEY=
+NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
+NVIDIA_VLM_MODEL=nvidia/nemotron-nano-12b-v2-vl
+
+GEMINI_API_KEY=
+GEMINI_BASE_URL=https://generativelanguage.googleapis.com
+GEMINI_VLM_MODEL=gemini-2.5-flash
+
+LM_STUDIO_BASE_URL=http://localhost:1234/v1
+LM_STUDIO_API_KEY=
+LM_STUDIO_VLM_MODEL=
+
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_VLM_MODEL=
+```
+
+Provider model discovery:
+
+- NVIDIA: call `/models` when key is available, merge results with built-in reference VLM candidates.
+- Gemini: call the model listing endpoint when key is available, merge with built-in Gemini reference VLM candidates.
+- LM Studio: call OpenAI-compatible `/models` on the configured local URL, merge with manual/reference entries.
+- Ollama: call local tags/model listing endpoint, merge with known vision-capable local model references.
+
+When provider discovery fails:
+
+- Return `connection_status: failed`.
+- Include failure reason in a safe, non-secret message.
+- Still return built-in reference models with `available: false` and `source: reference_catalog`.
+
+Suggested API endpoints:
+
+`GET /api/vlm/providers`
+
+- Returns provider list and field metadata for the two-level selector.
+- Does not test remote connectivity.
+
+`POST /api/vlm/models`
+
+- Body: provider, optional base URL override, optional API key override.
+- Returns available and unavailable/reference models.
+
+`POST /api/vlm/test-connection`
+
+- Body: provider, base URL override, API key override, model.
+- Performs a lightweight model listing or metadata check.
+- Returns safe status and reason.
+
+`POST /api/extract-prompt`
+
+- Extend multipart form with optional `vlm_provider`, `vlm_model`, `vlm_base_url`, and `vlm_api_key`.
+- Uses `.env` fallback when fields are absent.
+
+`POST /api/jobs`
+
+- Extend multipart form with the same VLM selection fields.
+- Store provider/model metadata in job attempts.
+
+#### Frontend Design
+
+Recommended components:
+
+```text
+frontend/src/components/VlmProviderSelector.tsx
+frontend/src/components/VlmConnectionPanel.tsx
+frontend/src/components/VlmModelSelect.tsx
+frontend/src/components/SecretInput.tsx
+frontend/src/api/vlm.ts
+```
+
+UI flow:
+
+1. User opens image-to-prompt or refinement loop panel.
+2. First dropdown selects provider.
+3. Provider-specific connection fields render below:
+   - NVIDIA: base URL, API key, model.
+   - Gemini AI Studio: base URL, API key, model.
+   - LM Studio: local URL, optional API key, model.
+   - Ollama: local URL, model.
+4. User can click refresh models.
+5. Model dropdown shows available models first, unavailable/reference models below.
+6. User can run image-to-prompt with selected provider/model.
+
+Frontend state rules:
+
+- Do not store typed API keys in localStorage by default.
+- Keep temporary key values in React state only.
+- Use `type="password"` for key fields.
+- Show key source as `.env configured`, `runtime override`, or `missing`.
+- Display provider/model used in every prompt extraction result.
+
+#### TDD Plan
+
+Backend tests first:
+
+- `test_vlm_provider_registry.py`
+  - lists all configured provider ids.
+  - resolves default provider from `.env`.
+  - rejects unknown provider ids.
+
+- `test_vlm_model_catalog.py`
+  - returns reference models when API key is missing.
+  - marks discovered models as available.
+  - sorts available models before unavailable models.
+  - preserves unavailable models with reasons.
+
+- `test_vlm_connection_settings.py`
+  - uses `.env` when runtime override is absent.
+  - uses runtime override without mutating `.env`.
+  - redacts keys from responses/loggable payloads.
+
+- `test_vlm_routes.py`
+  - `GET /api/vlm/providers` returns provider metadata.
+  - `POST /api/vlm/models` works with mock provider discovery.
+  - `POST /api/vlm/test-connection` returns safe success/failure.
+  - `POST /api/extract-prompt` can select a mock provider/model.
+
+- Provider-specific client tests:
+  - NVIDIA maps `/models` response to `VlmModelInfo`.
+  - Gemini maps model listing response to `VlmModelInfo`.
+  - LM Studio maps OpenAI-compatible `/models` response.
+  - Ollama maps local model tags/list response.
+  - each provider can convert local image data into its required request format.
+
+Frontend tests first:
+
+- provider dropdown defaults to `.env` provider.
+- changing provider updates connection fields.
+- key input is password-masked.
+- model dropdown sorts available before unavailable.
+- refresh models calls `/api/vlm/models`.
+- selected provider/model are included in extract-prompt and job requests.
+- unavailable models render with disabled styling or manual-mode gating.
+
+#### Development Phases
+
+Phase MP-1: Backend contracts and mock registry.
+
+- Add schemas, provider interface, registry, and mock provider.
+- Add provider/model API routes.
+- No real external calls yet.
+
+Phase MP-2: NVIDIA provider adapter.
+
+- Move existing NVIDIA VLM behavior behind the provider interface.
+- Implement NVIDIA model discovery via `/models`.
+- Keep pose audit and prompt composition behavior intact.
+- Add tests for currently observed candidate models such as `nvidia/llama-3.1-nemotron-nano-vl-8b-v1`, `nvidia/nemotron-nano-12b-v2-vl`, and `meta/llama-3.2-90b-vision-instruct` as reference entries, but do not assume every account can invoke all of them.
+
+Phase MP-3: Gemini, LM Studio, and Ollama provider adapters.
+
+- Add reference catalogs first.
+- Add discovery calls and safe error handling.
+- Add smoke scripts for each provider, guarded by explicit environment availability.
+
+Phase MP-4: Frontend selector UI.
+
+- Build provider dropdown, connection panels, model dropdown, key fields, and refresh/test buttons.
+- Wire selected provider/model to prompt extraction first.
+
+Phase MP-5: Job integration.
+
+- Pass VLM selection into `/api/jobs`.
+- Store provider/model metadata in job status/result/attempts.
+- Display provider/model in timeline and result panels.
+
+Phase MP-6: Real smoke verification.
+
+- Verify NVIDIA with `.env`.
+- Verify Gemini only if `GEMINI_API_KEY` is present.
+- Verify LM Studio only if local server responds.
+- Verify Ollama only if local server responds.
+- Never fail unit tests because a real provider is unavailable.
+
+#### Acceptance Criteria
+
+- The app has a first-level provider dropdown.
+- The second-level panel changes required connection fields per provider.
+- API keys are masked and never returned raw from backend responses.
+- The model dropdown shows available models first and unavailable/reference models second.
+- Missing/invalid key still shows reference model lists.
+- User can run image-to-prompt with selected provider/model.
+- Jobs record the VLM provider/model used.
+- All provider discovery and routing behavior is covered by mock tests.
+- Real provider smoke tests are opt-in and never required for normal CI.
+
 ### Prompt-To-Image Generation
 
 Primary module: `backend/app/clients/pollinations_image_client.py`

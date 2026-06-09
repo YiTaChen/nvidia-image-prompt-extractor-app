@@ -12,6 +12,18 @@ Initial TDD implementation for two independent workflows:
 
 Hosted NVIDIA image generation is no longer part of the current development path. The app uses NVIDIA for VLM prompt extraction/refinement and Pollinations for prompt-to-image generation.
 
+## Planned Multi-Provider VLM Selector
+
+The next image-to-prompt milestone is a two-level VLM selector:
+
+- First dropdown: provider, such as NVIDIA, Gemini AI Studio API, LM Studio, or Ollama.
+- Second panel: provider-specific URL/key fields and a model dropdown.
+- Model lists should show available discovered models first, followed by unavailable/reference models.
+- Missing or invalid keys should not hide the reference model catalog.
+- Secret fields must be password-masked and never returned raw from backend responses.
+
+Detailed implementation tasks are tracked in `AGENT_PROJECT_PLAN.md`.
+
 Example:
 
 ```env
