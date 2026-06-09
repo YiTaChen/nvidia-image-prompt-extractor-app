@@ -1,6 +1,6 @@
 from PIL import Image
 
-from app.clients.nvidia_vlm_client import NvidiaVisionClient, _build_refinement_instruction
+from app.clients.nvidia_vlm_client import INITIAL_SYSTEM_PROMPT, NvidiaVisionClient, _build_refinement_instruction
 from app.core.config import Settings
 from app.models.schemas import SimilarityScore
 
@@ -31,6 +31,23 @@ def test_refinement_instruction_includes_prompt_and_scores():
     assert "old prompt" in instruction
     assert "old negative" in instruction
     assert "final_score: 42.0" in instruction
+
+
+def test_prompts_prioritize_visible_human_identity_clothing_and_pose():
+    instruction = _build_refinement_instruction(
+        previous_prompt="old prompt",
+        previous_negative_prompt="old negative",
+        similarity_report=SimilarityScore(final_score=42, histogram_score=50, average_hash_score=30),
+    )
+
+    combined = f"{INITIAL_SYSTEM_PROMPT}\n{instruction}".lower()
+
+    assert "visible skin tone" in combined
+    assert "hair color" in combined
+    assert "clothing" in combined
+    assert "pose" in combined
+    assert "foreground people" in combined
+    assert "prompt text itself" in combined
 
 
 def test_refine_prompt_sends_original_generated_image_and_report(monkeypatch):

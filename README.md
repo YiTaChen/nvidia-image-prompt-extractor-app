@@ -137,6 +137,10 @@ backend/app/storage/jobs/{job_id}/generated/{iteration}.png
 
 Each refinement attempt records the generated image storage path in the API result.
 
+## Similarity Scoring
+
+The score is foreground-person weighted. It still reports whole-image histogram and hash scores, but final similarity now also uses subject-region layout, edge layout, and `critical_detail_score` so matching backgrounds cannot hide incorrect people, hair color, clothing, or pose.
+
 ## Test Fixture
 
 The sample image provided by the user is stored at:

@@ -1,7 +1,7 @@
 export type PromptExtractionResult = {
   prompt: string;
   negative_prompt: string;
-  analysis: Record<string, string>;
+  analysis: Record<string, unknown>;
 };
 
 export type ImageGenerationResult = {

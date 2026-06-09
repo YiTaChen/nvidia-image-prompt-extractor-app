@@ -1,10 +1,12 @@
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
 class PromptExtractionResult(BaseModel):
     prompt: str
     negative_prompt: str = ""
-    analysis: dict[str, str] = Field(default_factory=dict)
+    analysis: dict[str, Any] = Field(default_factory=dict)
 
 
 class ImageGenerationRequest(BaseModel):
@@ -25,6 +27,11 @@ class SimilarityScore(BaseModel):
     final_score: float
     histogram_score: float
     average_hash_score: float
+    subject_histogram_score: float = 0
+    subject_hash_score: float = 0
+    subject_layout_score: float = 0
+    edge_layout_score: float = 0
+    critical_detail_score: float = 0
 
 
 class RefinementAttempt(BaseModel):
