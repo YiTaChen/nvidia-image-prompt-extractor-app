@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { PromptExtractionResult } from "./api/client";
 import { ImagePromptPanel } from "./components/ImagePromptPanel";
 import { PromptImagePanel } from "./components/PromptImagePanel";
+import { RefinementLoopPanel } from "./components/RefinementLoopPanel";
 import "./styles.css";
 
 export default function App() {
@@ -16,6 +17,7 @@ export default function App() {
       <div className="workspace">
         <ImagePromptPanel onPromptReady={setExtractedPrompt} />
         <PromptImagePanel extractedPrompt={extractedPrompt} />
+        <RefinementLoopPanel />
       </div>
     </main>
   );

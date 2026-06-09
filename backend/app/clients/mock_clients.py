@@ -22,6 +22,20 @@ class MockVisionClient:
             },
         )
 
+    def refine_prompt(
+        self,
+        original_image_data_url: str,
+        generated_image: Image.Image,
+        previous_prompt: str,
+        previous_negative_prompt: str,
+        similarity_report,
+    ) -> PromptExtractionResult:
+        return PromptExtractionResult(
+            prompt=f"{previous_prompt} More faithful to the original image, iteration refinement.",
+            negative_prompt="blurry, distorted, low detail, incorrect composition",
+            analysis={"summary": f"Refined after score {similarity_report.final_score}"},
+        )
+
 
 class MockImageGenerationClient:
     def generate_image(self, request: ImageGenerationRequest) -> ImageGenerationResult:

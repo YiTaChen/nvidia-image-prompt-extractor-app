@@ -47,6 +47,10 @@ h1 {
   background: #ffffff;
 }
 
+.wide-panel {
+  grid-column: 1 / -1;
+}
+
 .section-title {
   display: flex;
   align-items: center;
@@ -106,6 +110,79 @@ textarea {
   display: block;
   max-width: 100%;
   border-radius: 6px;
+}
+
+.compact-upload {
+  min-height: 220px;
+}
+
+.compact-upload span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.compact-upload svg {
+  width: 18px;
+  height: 18px;
+}
+
+.loop-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(220px, 320px);
+  gap: 18px;
+}
+
+.loop-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.loop-controls input {
+  min-height: 40px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0 10px;
+  font: inherit;
+}
+
+.loop-result {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) 1fr;
+  gap: 14px;
+  align-items: start;
+}
+
+.loop-result > div:first-child,
+.attempt-list,
+.loop-result textarea {
+  grid-column: 1 / -1;
+}
+
+.loop-result > div:first-child {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.loop-result img {
+  width: 100%;
+  border-radius: 6px;
+}
+
+.attempt-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.attempt-list span {
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  padding: 5px 10px;
+  color: #334155;
+  font-size: 13px;
 }
 
 .upload-box img {
@@ -171,6 +248,11 @@ textarea {
   }
 
   .workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .loop-grid,
+  .loop-result {
     grid-template-columns: 1fr;
   }
 }

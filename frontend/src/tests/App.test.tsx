@@ -9,5 +9,6 @@ describe("App", () => {
 
     expect(screen.getByRole("heading", {name: "圖片生成 Prompt"})).toBeInTheDocument();
     expect(screen.getByRole("heading", {name: "Prompt 生成圖片"})).toBeInTheDocument();
+    expect(screen.getByRole("heading", {name: "Prompt Refinement Loop"})).toBeInTheDocument();
   });
 });

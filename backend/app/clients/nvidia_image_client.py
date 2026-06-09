@@ -6,6 +6,9 @@ from app.core.config import Settings
 from app.models.schemas import ImageGenerationRequest, ImageGenerationResult
 
 
+HOSTED_NVIDIA_LLM_BASE_URL = "integrate.api.nvidia.com"
+
+
 class NvidiaImageGenerationClient:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -16,6 +19,8 @@ class NvidiaImageGenerationClient:
 
         if _is_legacy_stability_model(self.settings.nvidia_image_model):
             return self._generate_legacy_stability_image(request)
+
+        _validate_openai_compatible_image_endpoint(self.settings)
 
         payload = {
             "model": self.settings.nvidia_image_model,
@@ -30,7 +35,7 @@ class NvidiaImageGenerationClient:
             payload["seed"] = request.seed
 
         response = requests.post(
-            f"{self.settings.resolved_image_base_url}/images/generations",
+            _openai_compatible_image_generation_url(self.settings),
             headers={
                 "Authorization": f"Bearer {self.settings.nvidia_api_key}",
                 "Content-Type": "application/json",
@@ -76,9 +81,30 @@ class NvidiaImageGenerationClient:
 
 def _is_legacy_stability_model(model: str) -> bool:
     return model in {
+        "stabilityai/sdxl-turbo",
         "stabilityai/stable-diffusion-xl",
         "stabilityai/stable-diffusion-3-medium",
     }
+
+
+def _validate_openai_compatible_image_endpoint(settings: Settings) -> None:
+    if settings.has_dedicated_image_base_url:
+        return
+    if HOSTED_NVIDIA_LLM_BASE_URL in settings.nvidia_base_url:
+        raise RuntimeError(
+            "NVIDIA_IMAGE_BASE_URL is required for NVIDIA image generation. "
+            "The hosted NVIDIA_BASE_URL is for VLM/chat models and does not expose "
+            "/images/generations for Visual GenAI NIMs. Start a Visual GenAI NIM "
+            "such as Qwen-Image, then set NVIDIA_IMAGE_BASE_URL to its /v1 base URL, "
+            "for example http://localhost:8000/v1."
+        )
+
+
+def _openai_compatible_image_generation_url(settings: Settings) -> str:
+    base_url = settings.resolved_image_base_url
+    if not base_url.endswith("/v1"):
+        base_url = f"{base_url}/v1"
+    return f"{base_url}/images/generations"
 
 
 def _build_legacy_stability_payload(request: ImageGenerationRequest) -> dict:
@@ -89,12 +115,15 @@ def _build_legacy_stability_payload(request: ImageGenerationRequest) -> dict:
         width = request.width
         height = request.height
     payload = {
-        "height": height,
-        "width": width,
         "text_prompts": [{"text": request.prompt, "weight": 1}],
+        "seed": request.seed or 0,
     }
+    if request.width == 1024 and request.height == 1024:
+        payload["height"] = height
+        payload["width"] = width
+    if request.prompt and request.width != 1024:
+        payload["sampler"] = "K_EULER_ANCESTRAL"
+        payload["steps"] = 2
     if request.negative_prompt:
         payload["text_prompts"].append({"text": request.negative_prompt, "weight": -1})
-    if request.seed is not None:
-        payload["seed"] = request.seed
     return payload

@@ -21,5 +21,29 @@ class ImageGenerationResult(BaseModel):
     model: str
 
 
+class SimilarityScore(BaseModel):
+    final_score: float
+    histogram_score: float
+    average_hash_score: float
+
+
+class RefinementAttempt(BaseModel):
+    iteration: int
+    prompt: str
+    negative_prompt: str = ""
+    generated_image_base64: str
+    generated_image_mime_type: str
+    score: SimilarityScore
+
+
+class RefinementResult(BaseModel):
+    reached_threshold: bool
+    threshold: float
+    max_iterations: int
+    best_score: float
+    final_prompt: str
+    attempts: list[RefinementAttempt]
+
+
 class ErrorResponse(BaseModel):
     detail: str

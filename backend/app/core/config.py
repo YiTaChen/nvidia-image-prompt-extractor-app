@@ -14,10 +14,13 @@ class Settings(BaseSettings):
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
     nvidia_image_base_url: str = ""
     nvidia_vlm_model: str = "nvidia/llama-3.1-nemotron-nano-vl-8b-v1"
-    nvidia_image_model: str = "qwen/qwen-image"
+    nvidia_image_model: str = "qwen/qwen-image-2512"
     nvidia_embedding_model: str = "nvidia/nvclip"
+    image_provider: str = "pollinations"
+    pollinations_api_key: str = ""
+    pollinations_model: str = "kontext"
     default_similarity_threshold: int = Field(default=80, ge=0, le=100)
-    max_iterations: int = Field(default=5, ge=1, le=20)
+    max_iterations: int = Field(default=3, ge=1, le=20)
     image_output_size: int = Field(default=1024, ge=256, le=2048)
     use_mock_nvidia: bool = False
 
@@ -34,6 +37,18 @@ class Settings(BaseSettings):
     @property
     def resolved_image_base_url(self) -> str:
         return (self.nvidia_image_base_url or self.nvidia_base_url).rstrip("/")
+
+    @property
+    def has_dedicated_image_base_url(self) -> bool:
+        return bool(self.nvidia_image_base_url.strip())
+
+    @property
+    def has_pollinations_key(self) -> bool:
+        return bool(self.pollinations_api_key.strip())
+
+    @property
+    def capped_max_iterations(self) -> int:
+        return max(1, min(3, self.max_iterations))
 
 
 @lru_cache
