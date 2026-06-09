@@ -93,9 +93,10 @@ def _same_prompt(next_prompt: str, previous_prompt: str) -> bool:
 def _append_foreground_fidelity_instruction(prompt: str, score) -> str:
     return (
         f"{prompt} Add a foreground-person fidelity correction: explicitly match the original "
-        "people's visible skin tone or visually apparent ethnicity, hair color and style, "
-        "clothing pieces and colors, hand placement, walking/standing pose, facial expression, "
-        "body spacing, and interaction before optimizing the background. "
+        "people's relative left/right positions, body orientation, gaze direction, left hand, "
+        "right hand, hand contact, held objects, leg action, walking/standing state, visible "
+        "skin tone or visually apparent ethnicity, hair color and style, clothing pieces and "
+        "colors, facial expression, body spacing, and interaction before optimizing the background. "
         f"The previous critical foreground detail score was {score.critical_detail_score:.1f}."
     )
 
@@ -103,7 +104,8 @@ def _append_foreground_fidelity_instruction(prompt: str, score) -> str:
 def _append_foreground_negative_prompt(negative_prompt: str) -> str:
     foreground_negative = (
         "wrong visible skin tone, wrong visually apparent ethnicity, wrong hair color, "
-        "wrong hair style, wrong clothing, wrong pose, wrong hand placement, wrong facial expression"
+        "wrong hair style, wrong clothing, wrong pose, wrong body orientation, wrong gaze direction, "
+        "wrong hand placement, not holding hands, wrong held object, wrong leg action, wrong facial expression"
     )
     if not negative_prompt:
         return foreground_negative

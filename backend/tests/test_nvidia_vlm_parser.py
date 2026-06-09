@@ -60,6 +60,38 @@ def test_parse_prompt_result_enriches_prompt_with_structured_human_subjects():
     assert "beige suit" in result.prompt
 
 
+def test_parse_prompt_result_enriches_prompt_with_specific_action_fields():
+    result = _parse_prompt_result(
+        """
+        {
+          "prompt": "A couple walking on a city sidewalk.",
+          "negative_prompt": "wrong people",
+          "analysis": {
+            "human_subjects": [
+              {
+                "body_orientation": "front-facing torso",
+                "gaze_direction": "looking directly at camera",
+                "left_hand": "holding white bouquet low at waist",
+                "right_hand": "holding partner's left hand",
+                "leg_action": "mid-stride walking toward camera",
+                "hand_contact": "hands joined between both bodies",
+                "held_objects": "white bouquet in woman's left hand",
+                "relative_position": "woman on viewer-left"
+              }
+            ]
+          }
+        }
+        """
+    )
+
+    assert "body orientation: front-facing torso" in result.prompt
+    assert "gaze direction: looking directly at camera" in result.prompt
+    assert "left hand: holding white bouquet low at waist" in result.prompt
+    assert "right hand: holding partner's left hand" in result.prompt
+    assert "leg action: mid-stride walking toward camera" in result.prompt
+    assert "hand contact: hands joined between both bodies" in result.prompt
+
+
 def test_parse_prompt_result_replaces_negative_prompt_that_restates_positive_scene():
     result = _parse_prompt_result(
         """

@@ -48,6 +48,11 @@ def test_prompts_prioritize_visible_human_identity_clothing_and_pose():
     assert "pose" in combined
     assert "foreground people" in combined
     assert "prompt text itself" in combined
+    assert "left hand" in combined
+    assert "right hand" in combined
+    assert "gaze direction" in combined
+    assert "leg action" in combined
+    assert "hand contact" in combined
 
 
 def test_refine_prompt_sends_original_generated_image_and_report(monkeypatch):

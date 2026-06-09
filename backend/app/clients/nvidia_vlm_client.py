@@ -10,16 +10,22 @@ from app.models.schemas import PromptExtractionResult, SimilarityScore
 
 INITIAL_SYSTEM_PROMPT = (
     "You are an expert image prompt engineer. Analyze the uploaded image and produce "
-    "a precise prompt for a text-to-image generation model. Preserve subject, "
-    "composition, style, lighting, color palette, camera details, and important "
-    "visual details. If foreground people are visible, prioritize them over the "
-    "background: describe the number of people, visible skin tone or visually apparent "
-    "ethnicity without guessing identity, hair color, hair style, clothing pieces and "
-    "colors, pose, body orientation, facial expression, interaction, and relative "
-    "position. These foreground-person details must appear in the prompt text itself, "
-    "not only in analysis. Put the human-subject checklist before background details. "
-    "Return strict JSON only with prompt, negative_prompt, and analysis. The analysis "
-    "object should include a human_subjects key when people are present."
+    "a precise prompt for a text-to-image generation model. If foreground people are "
+    "visible, the prompt must be action-first and pose-first before background details. "
+    "For each person, explicitly describe relative position, body orientation, gaze "
+    "direction, facial expression, left hand, right hand, hand contact with another "
+    "person, held objects, leg action, walking/standing/sitting state, body spacing, "
+    "interaction, visible skin tone or visually apparent ethnicity without guessing "
+    "identity, hair color, hair style, clothing pieces, and clothing colors. Avoid vague "
+    "phrases like 'walking' unless you also specify hand placement, leg action, facing "
+    "direction, and interaction. These foreground-person details must appear in the "
+    "prompt text itself, not only in analysis. Put the human-subject checklist before "
+    "background, style, lighting, color palette, and camera details. Return strict JSON "
+    "only with prompt, negative_prompt, and analysis. The analysis object must include "
+    "human_subjects when people are present, with keys: relative_position, body_orientation, "
+    "gaze_direction, facial_expression, left_hand, right_hand, hand_contact, held_objects, "
+    "leg_action, interaction, visible_skin_tone or visible_ethnicity, hair_color, "
+    "hair_style, clothing."
 )
 
 REFINEMENT_SYSTEM_PROMPT = (
@@ -28,8 +34,9 @@ REFINEMENT_SYSTEM_PROMPT = (
     "the previous prompt, and a similarity report. Rewrite the prompt to make the next "
     "generated image more visually similar to the original. Treat foreground people "
     "as the highest priority: visible skin tone or visually apparent ethnicity, hair "
-    "color and style, clothing, pose, facial expression, hand placement, body spacing, "
-    "and interaction must match before background similarity is considered successful. "
+    "color and style, clothing, relative position, body orientation, gaze direction, "
+    "left hand, right hand, hand contact, held objects, leg action, facial expression, "
+    "body spacing, and interaction must match before background similarity is considered successful. "
     "The rewritten prompt text itself must explicitly include corrected foreground-person "
     "details before any background description. "
     "Return strict JSON only with prompt, negative_prompt, and analysis."
@@ -62,9 +69,11 @@ class NvidiaVisionClient:
                                 "type": "text",
                                 "text": (
                                     "Create a detailed image-generation prompt for this image. "
-                                    "If people are visible, the prompt must explicitly describe "
-                                    "their visible skin tone or visually apparent ethnicity, hair "
-                                    "color/style, clothing, pose, expression, and interaction. "
+                                    "If people are visible, start the prompt with a per-person "
+                                    "action checklist: relative position, body orientation, gaze "
+                                    "direction, left hand, right hand, hand contact, held objects, "
+                                    "leg action, interaction, visible skin tone or visually apparent "
+                                    "ethnicity, hair color/style, clothing, and expression. "
                                     "Return JSON only."
                                 ),
                             },
@@ -144,12 +153,13 @@ def _build_refinement_instruction(
         f"- edge_layout_score: {similarity_report.edge_layout_score}\n"
         f"- critical_detail_score: {similarity_report.critical_detail_score}\n\n"
         "Compare the original image and the generated image. Background similarity alone "
-        "is not enough. Identify whether the foreground people differ in visible skin tone, "
-        "visually apparent ethnicity, hair color, hair style, clothing pieces/colors, pose, "
-        "gesture, body orientation, facial expression, and interaction. If any of these "
-        "human-subject details are wrong, rewrite the prompt with explicit constraints for "
-        "each person and add negative prompt terms for the wrong attributes. Avoid returning "
-        "the previous prompt verbatim."
+        "is not enough. Identify whether the foreground people differ in relative position, "
+        "body orientation, gaze direction, left hand, right hand, hand contact, held objects, "
+        "leg action, body spacing, visible skin tone, visually apparent ethnicity, hair color, "
+        "hair style, clothing pieces/colors, facial expression, and interaction. If any of "
+        "these human-subject action details are wrong, rewrite the prompt with explicit "
+        "per-person constraints and add negative prompt terms for the wrong attributes. "
+        "Avoid returning the previous prompt verbatim."
     )
 
 
@@ -192,6 +202,20 @@ def _enrich_prompt_with_human_subjects(result: PromptExtractionResult) -> Prompt
 
 def _subject_detail_values(subject: dict) -> list[str]:
     preferred_keys = [
+        "relative_position",
+        "body_orientation",
+        "gaze_direction",
+        "facial_expression",
+        "left_hand",
+        "right_hand",
+        "hand_contact",
+        "held_objects",
+        "leg_action",
+        "interaction",
+        "body_spacing",
+        "walking_state",
+        "standing_state",
+        "pose",
         "visible_ethnicity",
         "ethnicity",
         "skin_tone",
@@ -200,9 +224,7 @@ def _subject_detail_values(subject: dict) -> list[str]:
         "hair_style",
         "clothing",
         "outfit",
-        "pose",
         "expression",
-        "interaction",
         "position",
     ]
     values = []
