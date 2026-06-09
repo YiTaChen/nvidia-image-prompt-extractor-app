@@ -26,3 +26,51 @@ def test_parse_prompt_result_accepts_structured_human_subject_analysis():
     )
 
     assert result.analysis["human_subjects"][0]["hair_color"] == "black"
+
+
+def test_parse_prompt_result_enriches_prompt_with_structured_human_subjects():
+    result = _parse_prompt_result(
+        """
+        {
+          "prompt": "A couple walking on a city sidewalk.",
+          "negative_prompt": "wrong people",
+          "analysis": {
+            "human_subjects": [
+              {
+                "visible_ethnicity": "East Asian",
+                "hair_color": "long black hair",
+                "clothing": "brown suit",
+                "pose": "holding a white bouquet and walking hand in hand"
+              },
+              {
+                "visible_ethnicity": "East Asian",
+                "hair_color": "short black hair",
+                "clothing": "beige suit",
+                "pose": "walking hand in hand"
+              }
+            ]
+          }
+        }
+        """
+    )
+
+    assert result.prompt.startswith("Foreground people details to match exactly:")
+    assert "East Asian" in result.prompt
+    assert "long black hair" in result.prompt
+    assert "beige suit" in result.prompt
+
+
+def test_parse_prompt_result_replaces_negative_prompt_that_restates_positive_scene():
+    result = _parse_prompt_result(
+        """
+        {
+          "prompt": "A couple with dark hair walking hand in hand on a city sidewalk.",
+          "negative_prompt": "A couple with dark hair walking hand in hand on a city sidewalk, black and white.",
+          "analysis": {}
+        }
+        """
+    )
+
+    assert not result.negative_prompt.startswith("A couple with dark hair")
+    assert "wrong hair color" in result.negative_prompt
+    assert "black and white" in result.negative_prompt

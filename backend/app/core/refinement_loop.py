@@ -68,15 +68,45 @@ def _image_from_generation_result(image_base64: str) -> Image.Image:
 
 def _refine_prompt(vision_client, original_content: bytes, generated_image: Image.Image, prompt_result, score):
     if hasattr(vision_client, "refine_prompt"):
-        return vision_client.refine_prompt(
+        refined = vision_client.refine_prompt(
             original_image_data_url=bytes_to_data_url(original_content),
             generated_image=generated_image,
             previous_prompt=prompt_result.prompt,
             previous_negative_prompt=prompt_result.negative_prompt,
             similarity_report=score,
         )
+        if _same_prompt(refined.prompt, prompt_result.prompt):
+            refined.prompt = _append_foreground_fidelity_instruction(refined.prompt, score)
+            refined.negative_prompt = _append_foreground_negative_prompt(refined.negative_prompt)
+        return refined
     prompt_result.prompt = (
         f"{prompt_result.prompt}. Improve visual similarity to the source image. "
         f"Previous similarity score was {score.final_score:.1f}."
     )
     return prompt_result
+
+
+def _same_prompt(next_prompt: str, previous_prompt: str) -> bool:
+    return " ".join(next_prompt.lower().split()) == " ".join(previous_prompt.lower().split())
+
+
+def _append_foreground_fidelity_instruction(prompt: str, score) -> str:
+    return (
+        f"{prompt} Add a foreground-person fidelity correction: explicitly match the original "
+        "people's visible skin tone or visually apparent ethnicity, hair color and style, "
+        "clothing pieces and colors, hand placement, walking/standing pose, facial expression, "
+        "body spacing, and interaction before optimizing the background. "
+        f"The previous critical foreground detail score was {score.critical_detail_score:.1f}."
+    )
+
+
+def _append_foreground_negative_prompt(negative_prompt: str) -> str:
+    foreground_negative = (
+        "wrong visible skin tone, wrong visually apparent ethnicity, wrong hair color, "
+        "wrong hair style, wrong clothing, wrong pose, wrong hand placement, wrong facial expression"
+    )
+    if not negative_prompt:
+        return foreground_negative
+    if foreground_negative in negative_prompt:
+        return negative_prompt
+    return f"{negative_prompt}, {foreground_negative}"

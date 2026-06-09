@@ -166,4 +166,104 @@ def _parse_prompt_result(content: str) -> PromptExtractionResult:
         payload["analysis"] = {"summary": payload["analysis"]}
     if not isinstance(payload.get("analysis", {}), dict):
         payload["analysis"] = {}
-    return PromptExtractionResult.model_validate(payload)
+    result = _enrich_prompt_with_human_subjects(PromptExtractionResult.model_validate(payload))
+    return _sanitize_negative_prompt(result)
+
+
+def _enrich_prompt_with_human_subjects(result: PromptExtractionResult) -> PromptExtractionResult:
+    subjects = result.analysis.get("human_subjects")
+    if not isinstance(subjects, list) or not subjects:
+        return result
+    details = []
+    for index, subject in enumerate(subjects, start=1):
+        if isinstance(subject, dict):
+            values = _subject_detail_values(subject)
+        else:
+            values = [str(subject)]
+        if values:
+            details.append(f"person {index}: {'; '.join(values)}")
+    if not details:
+        return result
+    prefix = f"Foreground people details to match exactly: {' | '.join(details)}."
+    if prefix.lower() not in result.prompt.lower():
+        result.prompt = f"{prefix} {result.prompt}"
+    return result
+
+
+def _subject_detail_values(subject: dict) -> list[str]:
+    preferred_keys = [
+        "visible_ethnicity",
+        "ethnicity",
+        "skin_tone",
+        "visible_skin_tone",
+        "hair_color",
+        "hair_style",
+        "clothing",
+        "outfit",
+        "pose",
+        "expression",
+        "interaction",
+        "position",
+    ]
+    values = []
+    used_keys = set()
+    for key in preferred_keys:
+        if key in subject and subject[key]:
+            values.append(f"{key.replace('_', ' ')}: {_stringify_subject_value(subject[key])}")
+            used_keys.add(key)
+    for key, value in subject.items():
+        if key not in used_keys and value:
+            values.append(f"{key.replace('_', ' ')}: {_stringify_subject_value(value)}")
+    return values
+
+
+def _stringify_subject_value(value) -> str:
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value)
+    if isinstance(value, dict):
+        return ", ".join(f"{key}: {item}" for key, item in value.items())
+    return str(value)
+
+
+def _sanitize_negative_prompt(result: PromptExtractionResult) -> PromptExtractionResult:
+    if _negative_prompt_restates_positive_scene(result.prompt, result.negative_prompt):
+        extras = []
+        if "black and white" in result.negative_prompt.lower():
+            extras.append("black and white")
+        result.negative_prompt = ", ".join(
+            [
+                "wrong visible skin tone",
+                "wrong visually apparent ethnicity",
+                "wrong hair color",
+                "wrong hair style",
+                "wrong clothing",
+                "wrong pose",
+                "wrong hand placement",
+                "wrong facial expression",
+                "extra people",
+                "missing bouquet",
+                "blurry",
+                "distorted faces",
+                *extras,
+            ]
+        )
+    return result
+
+
+def _negative_prompt_restates_positive_scene(prompt: str, negative_prompt: str) -> bool:
+    if not negative_prompt:
+        return False
+    prompt_terms = set(_meaningful_terms(prompt))
+    negative_terms = _meaningful_terms(negative_prompt)
+    if not prompt_terms or not negative_terms:
+        return False
+    overlap = sum(1 for term in negative_terms if term in prompt_terms) / len(negative_terms)
+    return overlap >= 0.45
+
+
+def _meaningful_terms(text: str) -> list[str]:
+    return [
+        token.strip(".,;:!?()[]{}\"'").lower()
+        for token in text.split()
+        if len(token.strip(".,;:!?()[]{}\"'")) >= 4
+    ]
