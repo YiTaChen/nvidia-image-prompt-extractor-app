@@ -93,8 +93,9 @@ def _same_prompt(next_prompt: str, previous_prompt: str) -> bool:
 def _append_foreground_fidelity_instruction(prompt: str, score) -> str:
     return (
         f"{prompt} Add a foreground-person fidelity correction: explicitly match the original "
-        "people's relative left/right positions, body orientation, gaze direction, left hand, "
-        "right hand, hand contact, held objects, leg action, walking/standing state, visible "
+        "people's relative left/right positions, screen-space position, depth order, head direction, "
+        "gaze direction, body orientation, body direction, movement direction, walking trajectory, "
+        "camera relation, left hand, right hand, hand contact, held objects, leg action, walking/standing state, visible "
         "skin tone or visually apparent ethnicity, hair color and style, clothing pieces and "
         "colors, facial expression, body spacing, and interaction before optimizing the background. "
         f"The previous critical foreground detail score was {score.critical_detail_score:.1f}."

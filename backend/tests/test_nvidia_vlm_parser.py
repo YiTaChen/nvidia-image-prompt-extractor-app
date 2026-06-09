@@ -70,6 +70,11 @@ def test_parse_prompt_result_enriches_prompt_with_specific_action_fields():
             "human_subjects": [
               {
                 "body_orientation": "front-facing torso",
+                "head_direction": "head turned back toward camera",
+                "body_direction": "torso angled toward screen-right",
+                "movement_direction": "moving toward screen-right",
+                "walking_trajectory": "walking diagonally away from the camera along the sidewalk",
+                "camera_relation": "faces look back at camera while bodies move away",
                 "gaze_direction": "looking directly at camera",
                 "left_hand": "holding white bouquet low at waist",
                 "right_hand": "holding partner's left hand",
@@ -85,6 +90,11 @@ def test_parse_prompt_result_enriches_prompt_with_specific_action_fields():
     )
 
     assert "body orientation: front-facing torso" in result.prompt
+    assert "head direction: head turned back toward camera" in result.prompt
+    assert "body direction: torso angled toward screen-right" in result.prompt
+    assert "movement direction: moving toward screen-right" in result.prompt
+    assert "walking trajectory: walking diagonally away from the camera along the sidewalk" in result.prompt
+    assert "camera relation: faces look back at camera while bodies move away" in result.prompt
     assert "gaze direction: looking directly at camera" in result.prompt
     assert "left hand: holding white bouquet low at waist" in result.prompt
     assert "right hand: holding partner's left hand" in result.prompt
