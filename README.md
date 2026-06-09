@@ -3,28 +3,20 @@
 Initial TDD implementation for two independent workflows:
 
 - Upload an image and ask an NVIDIA vision-language model to generate an image prompt.
-- Enter a prompt and ask Pollinations or an NVIDIA image-generation endpoint to generate an image.
-- Run a capped prompt-refinement loop that stops after at most 3 iterations by default.
-
-The refinement loop and similarity scoring are planned in `AGENT_PROJECT_PLAN.md` but are not wired yet.
+- Enter a prompt and ask Pollinations to generate an image.
+- Run a capped prompt-refinement loop with prompt extraction, image generation, similarity scoring, prompt refinement, progress events, and cancellable background jobs.
 
 ## Current NVIDIA Endpoint Notes
 
 `NVIDIA_BASE_URL` is used for the hosted VLM chat endpoint.
 
-`NVIDIA_IMAGE_BASE_URL` is required for real image generation. It must point to a Visual GenAI NIM `/v1` base URL, for example `http://localhost:8000/v1`.
-
-The current hosted `https://integrate.api.nvidia.com/v1` endpoint successfully supports the configured VLM smoke test, but it does not expose the Visual GenAI `/images/generations` endpoint. NVIDIA's Qwen-Image docs show the image-generation client using a self-hosted NIM base URL such as `http://localhost:8000/v1` with model `qwen/qwen-image-2512`.
-
-Several older hosted text-to-image endpoints, such as `stabilityai/sdxl-turbo`, `stabilityai/stable-diffusion-3-medium`, and `stabilityai/stable-diffusion-xl`, are supported by the backend as legacy candidates. They currently return 404 for this API key, which means the account does not have an active hosted/free text-to-image endpoint.
+Hosted NVIDIA image generation is no longer part of the current development path. The app uses NVIDIA for VLM prompt extraction/refinement and Pollinations for prompt-to-image generation.
 
 Example:
 
 ```env
 NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
-NVIDIA_IMAGE_BASE_URL=http://localhost:8000/v1
 NVIDIA_VLM_MODEL=nvidia/llama-3.1-nemotron-nano-vl-8b-v1
-NVIDIA_IMAGE_MODEL=qwen/qwen-image-2512
 ```
 
 For development, the app defaults to Pollinations for prompt-to-image:
@@ -56,19 +48,6 @@ cd frontend
 npm install
 npm test
 npm run build
-```
-
-Hosted image endpoint smoke test:
-
-```bash
-cd ..
-backend/.venv/bin/python backend/scripts/smoke_image_endpoints.py
-```
-
-Expected result when no hosted image endpoint is available:
-
-```text
-No hosted NVIDIA image-generation endpoint is available for this API key.
 ```
 
 ## Run Locally
@@ -118,9 +97,45 @@ http://127.0.0.1:5173/
 - Runs image prompt extraction, prompt-to-image generation, similarity scoring, and prompt refinement.
 - Stops when the threshold is reached or the capped max iteration count is reached.
 
+`POST /api/jobs`
+
+- Multipart form fields: `image`, `threshold`, `max_iterations`
+- Creates a queued background refinement job and immediately stores the normalized original image.
+- Returns: `job_id`, `status`
+
+`GET /api/jobs/{job_id}`
+
+- Returns job status: `queued`, `running`, `completed`, `failed`, or `cancelled`.
+- Includes current iteration, threshold, max iterations, progress events, and result metadata when available.
+
+`GET /api/jobs/{job_id}/events`
+
+- Server-Sent Events stream for realtime progress.
+- Emits queued/running/iteration/completed/failed/cancelled events.
+
+`GET /api/jobs/{job_id}/result`
+
+- Returns the completed `RefinementResult`.
+- Returns `409 Conflict` if the job is not completed yet.
+
+`POST /api/jobs/{job_id}/cancel`
+
+- Cancels a queued or running job.
+
 `GET /api/image-generation-config`
 
-- Returns whether `NVIDIA_IMAGE_BASE_URL` has been configured for real image generation.
+- Returns the active prompt-to-image provider, model, base URL, and whether image generation is configured.
+
+## Local Job Storage
+
+Job files are stored in deterministic local paths and ignored by Git:
+
+```text
+backend/app/storage/jobs/{job_id}/original.png
+backend/app/storage/jobs/{job_id}/generated/{iteration}.png
+```
+
+Each refinement attempt records the generated image storage path in the API result.
 
 ## Test Fixture
 

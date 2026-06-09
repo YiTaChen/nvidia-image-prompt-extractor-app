@@ -32,6 +32,19 @@ export type RefinementResult = {
   attempts: RefinementAttempt[];
 };
 
+export type JobCreateResult = {
+  job_id: string;
+  status: string;
+};
+
+export type JobEvent = {
+  type: string;
+  job_id: string;
+  message: string;
+  iteration: number | null;
+  score: number | null;
+};
+
 export async function extractPrompt(image: File): Promise<PromptExtractionResult> {
   const formData = new FormData();
   formData.append("image", image);
@@ -75,6 +88,38 @@ export async function runRefinementLoop(image: File, threshold: number, maxItera
     throw new Error(await readError(response));
   }
   return response.json();
+}
+
+export async function createRefinementJob(image: File, threshold: number, maxIterations: number): Promise<JobCreateResult> {
+  const formData = new FormData();
+  formData.append("image", image);
+  formData.append("threshold", String(threshold));
+  formData.append("max_iterations", String(maxIterations));
+  const response = await fetch("/api/jobs", {
+    method: "POST",
+    body: formData
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  return response.json();
+}
+
+export async function getJobResult(jobId: string): Promise<RefinementResult> {
+  const response = await fetch(`/api/jobs/${jobId}/result`);
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  return response.json();
+}
+
+export async function cancelJob(jobId: string): Promise<void> {
+  const response = await fetch(`/api/jobs/${jobId}/cancel`, {
+    method: "POST"
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
 }
 
 async function readError(response: Response): Promise<string> {

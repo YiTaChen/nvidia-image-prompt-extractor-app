@@ -33,6 +33,7 @@ class RefinementAttempt(BaseModel):
     negative_prompt: str = ""
     generated_image_base64: str
     generated_image_mime_type: str
+    generated_image_path: str | None = None
     score: SimilarityScore
 
 
@@ -47,3 +48,27 @@ class RefinementResult(BaseModel):
 
 class ErrorResponse(BaseModel):
     detail: str
+
+
+class JobCreateResponse(BaseModel):
+    job_id: str
+    status: str
+
+
+class JobStatusResponse(BaseModel):
+    job_id: str
+    status: str
+    threshold: float
+    max_iterations: int
+    current_iteration: int = 0
+    best_score: float | None = None
+    original_image_path: str | None = None
+    error: str | None = None
+
+
+class JobEvent(BaseModel):
+    type: str
+    job_id: str
+    message: str
+    iteration: int | None = None
+    score: float | None = None

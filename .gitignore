@@ -19,6 +19,7 @@ frontend-smoke.png
 
 # Runtime user uploads and NVIDIA-generated images.
 backend/app/storage/uploads/
+backend/app/storage/jobs/
 backend/app/storage/generated/
 backend/app/storage/originals/
 backend/app/storage/jobs.db

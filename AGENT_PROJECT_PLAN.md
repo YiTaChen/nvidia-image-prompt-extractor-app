@@ -2,7 +2,9 @@
 
 ## Project Summary
 
-Build a web application that accepts an uploaded image, uses an NVIDIA vision-language model to extract a high-quality image-generation prompt, uses an NVIDIA image-generation model to generate a new image from that prompt, compares the generated image with the original image, and iteratively refines the prompt until the similarity score reaches the user-defined threshold.
+Build a web application that accepts an uploaded image, uses an NVIDIA vision-language model to extract a high-quality image-generation prompt, uses Pollinations to generate a new image from that prompt, compares the generated image with the original image, and iteratively refines the prompt until the similarity score reaches the user-defined threshold.
+
+Current provider decision: hosted NVIDIA image-generation endpoint development is cancelled. Do not add new hosted NVIDIA image endpoint work unless the user explicitly reopens it. NVIDIA remains the VLM provider for initial prompt extraction and prompt refinement.
 
 Default similarity threshold: 80%.
 
@@ -14,7 +16,7 @@ The project must be developed with TDD. All core business logic should be testab
 2. User optionally adjusts similarity threshold, max iterations, generation size, seed, and negative prompt.
 3. Backend validates and normalizes the image.
 4. NVIDIA VLM generates the initial image prompt from the original image.
-5. NVIDIA image-generation model generates an image from the prompt.
+5. Pollinations image-generation model generates an image from the prompt.
 6. Backend calculates similarity between original image and generated image.
 7. If score is greater than or equal to the threshold, stop and return the final result.
 8. If score is lower than the threshold, send the original image, last generated image, last prompt, and score details to NVIDIA VLM to refine the prompt.
@@ -166,9 +168,11 @@ Initial prompt output should be structured:
 }
 ```
 
-### NVIDIA Image Generation
+### Prompt-To-Image Generation
 
-Module: `backend/app/clients/nvidia_image_client.py`
+Primary module: `backend/app/clients/pollinations_image_client.py`
+
+Legacy/self-hosted NVIDIA module: `backend/app/clients/nvidia_image_client.py`
 
 Responsibilities:
 
@@ -176,6 +180,8 @@ Responsibilities:
 - Accept generation settings such as width, height, seed, cfg scale, and negative prompt where supported by the selected model.
 - Parse response image data.
 - Save image to `backend/app/storage/generated/{job_id}/{iteration}.png`.
+- Keep Pollinations as the current development path.
+- Do not implement or prioritize hosted NVIDIA image endpoints.
 
 ### Similarity Scoring
 

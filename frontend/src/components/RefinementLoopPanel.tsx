@@ -1,7 +1,13 @@
 import { ImageUp, Loader2, Repeat } from "lucide-react";
 import { useState } from "react";
 
-import { runRefinementLoop, type RefinementResult } from "../api/client";
+import {
+  cancelJob,
+  createRefinementJob,
+  getJobResult,
+  type JobEvent,
+  type RefinementResult
+} from "../api/client";
 
 export function RefinementLoopPanel() {
   const [file, setFile] = useState<File | null>(null);
@@ -9,12 +15,16 @@ export function RefinementLoopPanel() {
   const [threshold, setThreshold] = useState(80);
   const [maxIterations, setMaxIterations] = useState(3);
   const [result, setResult] = useState<RefinementResult | null>(null);
+  const [events, setEvents] = useState<JobEvent[]>([]);
+  const [jobId, setJobId] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
   function handleFileChange(nextFile: File | null) {
     setFile(nextFile);
     setResult(null);
+    setEvents([]);
+    setJobId("");
     setError("");
     if (previewUrl) {
       URL.revokeObjectURL(previewUrl);
@@ -29,12 +39,44 @@ export function RefinementLoopPanel() {
     }
     setIsLoading(true);
     setError("");
+    setEvents([]);
+    setResult(null);
     try {
-      setResult(await runRefinementLoop(file, threshold, maxIterations));
+      const created = await createRefinementJob(file, threshold, maxIterations);
+      setJobId(created.job_id);
+      const eventSource = new EventSource(`/api/jobs/${created.job_id}/events`);
+      eventSource.onmessage = async (event) => {
+        const parsed = JSON.parse(event.data) as JobEvent;
+        setEvents((current) => [...current, parsed]);
+        if (["completed", "failed", "cancelled"].includes(parsed.type)) {
+          eventSource.close();
+          setIsLoading(false);
+          if (parsed.type === "completed") {
+            setResult(await getJobResult(created.job_id));
+          } else {
+            setError(parsed.message);
+          }
+        }
+      };
+      eventSource.onerror = () => {
+        eventSource.close();
+        setIsLoading(false);
+        setError("事件連線中斷。");
+      };
     } catch (err) {
       setError(err instanceof Error ? err.message : "Loop 執行失敗。");
-    } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function handleCancel() {
+    if (!jobId) {
+      return;
+    }
+    try {
+      await cancelJob(jobId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "取消失敗。");
     }
   }
 
@@ -85,10 +127,24 @@ export function RefinementLoopPanel() {
             {isLoading ? <Loader2 className="spin" aria-hidden="true" /> : <Repeat aria-hidden="true" />}
             執行 Loop
           </button>
+          <button className="secondary-button" type="button" onClick={handleCancel} disabled={!isLoading || !jobId}>
+            取消 Job
+          </button>
         </div>
       </div>
 
       {error ? <p className="error">{error}</p> : null}
+      {events.length ? (
+        <div className="event-list">
+          {events.map((event, index) => (
+            <span key={`${event.type}-${index}`}>
+              {event.iteration ? `#${event.iteration} ` : ""}
+              {event.message}
+              {event.score !== null ? ` (${event.score.toFixed(1)})` : ""}
+            </span>
+          ))}
+        </div>
+      ) : null}
 
       {result && bestAttempt ? (
         <div className="loop-result">

@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes_generation import router as generation_router
+from app.api.routes_jobs import router as jobs_router
 from app.api.routes_prompt import router as prompt_router
 
 
@@ -17,6 +18,7 @@ app.add_middleware(
 
 app.include_router(prompt_router)
 app.include_router(generation_router)
+app.include_router(jobs_router)
 
 
 @app.get("/api/health")
