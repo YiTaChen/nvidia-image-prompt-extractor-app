@@ -504,6 +504,7 @@ Implementation status as of 2026-06-10:
 
 - Completed: Pollinations prompt-to-image client and `/api/generate-image`.
 - Completed: image generation config endpoint for the current active provider.
+- Completed: bundled ComfyUI API workflow `qwen_image_edit_plus_text_to_image`, cataloged as the primary `text_to_image` template for future ComfyUI prompt-to-image provider development.
 - Completed: bundled ComfyUI API workflow `qwen_image_edit_plus_multi_image_edit`, cataloged as `multi_image_edit` for Qwen Image Edit Plus multi-reference image editing.
 - Planned: provider abstraction/registry for prompt-to-image generation.
 - Planned: ComfyUI client, text-to-image and image-to-image workflow templating, model/workflow discovery, frontend provider selector, and job integration.
@@ -537,7 +538,7 @@ POLLINATIONS_MODEL=kontext
 
 COMFYUI_BASE_URL=http://127.0.0.1:8188
 COMFYUI_API_KEY=
-COMFYUI_WORKFLOW=text_to_image_basic
+COMFYUI_WORKFLOW=qwen_image_edit_plus_text_to_image
 COMFYUI_IMAGE_TO_IMAGE_WORKFLOW=image_to_image_basic
 COMFYUI_MULTI_IMAGE_EDIT_WORKFLOW=qwen_image_edit_plus_multi_image_edit
 COMFYUI_CHECKPOINT=
@@ -586,6 +587,7 @@ backend/app/core/comfyui_workflows.py
 backend/app/workflows/comfyui/workflow_catalog.json
 backend/app/workflows/comfyui/text_to_image_basic.workflow.json
 backend/app/workflows/comfyui/image_to_image_basic.workflow.json
+backend/app/workflows/comfyui/qwen_image_edit_plus_text_to_image.workflow.json
 backend/app/workflows/comfyui/qwen_image_edit_plus_multi_image_edit.workflow.json
 ```
 
@@ -633,6 +635,7 @@ Workflow templating rules:
 
 - Store safe built-in workflow templates in git under `backend/app/workflows/comfyui/`.
 - Store workflow metadata in `backend/app/workflows/comfyui/workflow_catalog.json`.
+- Use bundled `qwen_image_edit_plus_text_to_image` as the first development template for ComfyUI prompt-to-image integration. It is an API-format workflow converted from `workflow_no_image_ref.png`.
 - Start with one basic text-to-image workflow using a checkpoint loader, positive/negative CLIP text encode nodes, sampler, VAE decode, and SaveImage.
 - Add one basic image-to-image workflow using LoadImage, checkpoint loader, positive/negative CLIP text encode nodes, VAEEncode, sampler with configurable denoise, VAEDecode, and SaveImage.
 - Image-to-image workflow bindings must include prompt, negative prompt, seed, width, height or resize node where applicable, checkpoint, init image, denoise strength, and save node.
@@ -661,6 +664,29 @@ Suggested workflow manifest shape:
     "save": "9"
   },
   "capabilities": ["text_to_image", "negative_prompt", "seed", "size"]
+}
+```
+
+Bundled prompt-to-image workflow manifest entry:
+
+```json
+{
+  "id": "qwen_image_edit_plus_text_to_image",
+  "display_name": "Qwen Image Edit Plus - Text to Image",
+  "workflow_path": "backend/app/workflows/comfyui/qwen_image_edit_plus_text_to_image.workflow.json",
+  "mode": "text_to_image",
+  "required_checkpoint": "Qwen-Rapid-AIO-NSFW-v19.safetensors",
+  "required_custom_nodes": ["TextEncodeQwenImageEditPlus"],
+  "bindings": {
+    "prompt": "8.inputs.prompt",
+    "negative_prompt": "2.inputs.prompt",
+    "checkpoint": "9.inputs.ckpt_name",
+    "seed": "5.inputs.seed",
+    "width": "7.inputs.width",
+    "height": "7.inputs.height",
+    "denoise": "5.inputs.denoise"
+  },
+  "capabilities": ["text_to_image", "negative_prompt", "seed", "size", "sampler_settings"]
 }
 ```
 
@@ -829,6 +855,7 @@ Backend tests first:
 
 - `test_comfyui_workflows.py`
   - loads built-in workflow manifest.
+  - loads workflow catalog and includes `qwen_image_edit_plus_text_to_image` as the primary `text_to_image` workflow.
   - loads workflow catalog and includes `qwen_image_edit_plus_multi_image_edit` as `multi_image_edit`.
   - patches prompt, negative prompt, seed, width, height, and checkpoint into the expected node paths.
   - patches init image filename and denoise strength into image-to-image workflows.
@@ -893,6 +920,7 @@ Phase IMG-MP-2: Pollinations adapter migration.
 Phase IMG-MP-3: ComfyUI workflow foundation.
 
 - Add built-in text-to-image and image-to-image workflow JSON and manifests.
+- Add bundled Qwen Image Edit Plus text-to-image workflow and catalog metadata as the initial prompt-to-image template.
 - Add bundled Qwen Image Edit Plus multi-image edit workflow and catalog metadata.
 - Add workflow loader/patcher with node-binding validation.
 - Add tests for prompt/negative/seed/size/checkpoint/init-image/denoise/multi-reference-image patching.

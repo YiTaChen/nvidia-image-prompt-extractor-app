@@ -1,0 +1,94 @@
+{
+  "1": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": [
+        "10",
+        0
+      ]
+    }
+  },
+  "2": {
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "inputs": {
+      "prompt": "",
+      "clip": [
+        "9",
+        1
+      ],
+      "vae": [
+        "9",
+        2
+      ]
+    }
+  },
+  "5": {
+    "class_type": "KSampler",
+    "inputs": {
+      "seed": 368793705940434,
+      "steps": 6,
+      "cfg": 1,
+      "sampler_name": "euler_ancestral",
+      "scheduler": "beta",
+      "denoise": 1,
+      "model": [
+        "9",
+        0
+      ],
+      "positive": [
+        "8",
+        0
+      ],
+      "negative": [
+        "2",
+        0
+      ],
+      "latent_image": [
+        "7",
+        0
+      ]
+    }
+  },
+  "7": {
+    "class_type": "EmptyLatentImage",
+    "inputs": {
+      "width": 1000,
+      "height": 1304,
+      "batch_size": 1
+    }
+  },
+  "8": {
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "inputs": {
+      "prompt": "\n\n\n圖1 的女生一相同的站姿在圖1中央,\n\n\n圖2的男生坐在椅子上 並靠在椅背上, 斜背對著鏡頭 看著女生.\n圖1 女生身體面向男生,  \n\n女生臉上露出害羞的表情.\n\n\n全景鏡頭.",
+      "clip": [
+        "9",
+        1
+      ],
+      "vae": [
+        "9",
+        2
+      ]
+    }
+  },
+  "9": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "Qwen-Rapid-AIO-NSFW-v19.safetensors"
+    }
+  },
+  "10": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "5",
+        0
+      ],
+      "vae": [
+        "9",
+        2
+      ]
+    }
+  }
+}

@@ -54,7 +54,7 @@ Planned ComfyUI prompt-to-image settings:
 IMAGE_PROVIDER=comfyui
 COMFYUI_BASE_URL=http://127.0.0.1:8188
 COMFYUI_API_KEY=
-COMFYUI_WORKFLOW=text_to_image_basic
+COMFYUI_WORKFLOW=qwen_image_edit_plus_text_to_image
 COMFYUI_IMAGE_TO_IMAGE_WORKFLOW=image_to_image_basic
 COMFYUI_MULTI_IMAGE_EDIT_WORKFLOW=qwen_image_edit_plus_multi_image_edit
 COMFYUI_CHECKPOINT=
@@ -69,6 +69,7 @@ Bundled ComfyUI workflow metadata lives in:
 
 ```text
 backend/app/workflows/comfyui/workflow_catalog.json
+backend/app/workflows/comfyui/qwen_image_edit_plus_text_to_image.workflow.json
 backend/app/workflows/comfyui/qwen_image_edit_plus_multi_image_edit.workflow.json
 ```
 
