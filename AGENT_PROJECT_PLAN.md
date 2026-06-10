@@ -505,7 +505,8 @@ Implementation status as of 2026-06-10:
 - Completed: Pollinations prompt-to-image client and `/api/generate-image`.
 - Completed: image generation config endpoint for the current active provider.
 - Planned: provider abstraction/registry for prompt-to-image generation.
-- Planned: ComfyUI client, workflow templating, model/workflow discovery, frontend provider selector, and job integration.
+- Planned: ComfyUI client, text-to-image and image-to-image workflow templating, model/workflow discovery, frontend provider selector, and job integration.
+- Planned: ComfyUI image-to-image mode that can use the original uploaded image as an init image during refinement to preserve pose, composition, and subject layout.
 - Planned: real ComfyUI smoke test only when a local ComfyUI server is available.
 
 #### ComfyUI API Assumptions
@@ -517,8 +518,11 @@ The backend should call ComfyUI through the user's local or remote ComfyUI HTTP 
 - `POST /prompt` to enqueue a workflow graph with a generated `client_id`.
 - `GET /history/{prompt_id}` to poll for completed outputs.
 - `GET /view?filename=...&subfolder=...&type=output` to fetch generated image bytes.
+- `POST /upload/image` to upload an init/reference image for image-to-image workflows.
 - Optional `GET /ws?clientId=...` for live execution progress after the synchronous polling path works.
 - Optional `POST /interrupt` for cancellation after job queue integration.
+
+ComfyUI can support image-to-image when the workflow includes an image input path such as `LoadImage -> VAEEncode -> KSampler latent_image`, with sampler denoise/strength below `1.0` to preserve part of the init image. This should be treated as a first-class ComfyUI workflow mode, not as a separate provider.
 
 #### Configuration
 
@@ -533,12 +537,16 @@ POLLINATIONS_MODEL=kontext
 COMFYUI_BASE_URL=http://127.0.0.1:8188
 COMFYUI_API_KEY=
 COMFYUI_WORKFLOW=text_to_image_basic
+COMFYUI_IMAGE_TO_IMAGE_WORKFLOW=image_to_image_basic
 COMFYUI_CHECKPOINT=
+COMFYUI_DENOISE_STRENGTH=0.55
 COMFYUI_POSITIVE_NODE_ID=
 COMFYUI_NEGATIVE_NODE_ID=
 COMFYUI_SEED_NODE_ID=
 COMFYUI_WIDTH_NODE_ID=
 COMFYUI_HEIGHT_NODE_ID=
+COMFYUI_IMAGE_NODE_ID=
+COMFYUI_DENOISE_NODE_ID=
 COMFYUI_SAVE_NODE_ID=
 COMFYUI_TIMEOUT_SECONDS=300
 COMFYUI_POLL_INTERVAL_SECONDS=1
@@ -548,6 +556,9 @@ Settings rules:
 
 - `IMAGE_PROVIDER=pollinations` remains the default.
 - `IMAGE_PROVIDER=comfyui` selects ComfyUI for server-side generation.
+- `COMFYUI_WORKFLOW` is the default text-to-image workflow.
+- `COMFYUI_IMAGE_TO_IMAGE_WORKFLOW` is the default image-to-image workflow.
+- `COMFYUI_DENOISE_STRENGTH` controls how much ComfyUI changes the init image in image-to-image mode. Suggested default range: `0.45` to `0.65`; lower values preserve the original image more strongly, higher values allow larger changes.
 - ComfyUI API keys are optional because local ComfyUI usually has no auth, but the field allows reverse-proxy/API-gateway deployments.
 - Runtime overrides from the UI must be request-scoped and must not write to `.env`.
 - Never return raw `COMFYUI_API_KEY` in any API response.
@@ -570,6 +581,7 @@ backend/app/clients/image_generation/
 backend/app/clients/comfyui_image_client.py
 backend/app/core/comfyui_workflows.py
 backend/app/workflows/comfyui/text_to_image_basic.workflow.json
+backend/app/workflows/comfyui/image_to_image_basic.workflow.json
 ```
 
 Provider interface:
@@ -589,6 +601,14 @@ class ImageGenerationProvider:
 
     def generate_image(self, request: ImageGenerationRequest, selection: ImageProviderSelection) -> ImageGenerationResult:
         ...
+
+    def generate_image_to_image(
+        self,
+        request: ImageGenerationRequest,
+        init_image: bytes,
+        selection: ImageProviderSelection,
+    ) -> ImageGenerationResult:
+        ...
 ```
 
 ComfyUI client responsibilities:
@@ -596,6 +616,7 @@ ComfyUI client responsibilities:
 - Build request-scoped `client_id`.
 - Load a workflow template JSON by id.
 - Patch prompt, negative prompt, seed, width, height, checkpoint/model, and optional sampler settings into known node ids.
+- For image-to-image workflows, upload the init image to ComfyUI with `POST /upload/image`, patch the returned filename into the workflow image node, and patch denoise strength into the sampler node.
 - Submit `POST /prompt` with `{ "prompt": workflow, "client_id": client_id }`.
 - Parse `prompt_id`.
 - Poll `/history/{prompt_id}` until a `SaveImage` output is available or timeout is reached.
@@ -607,6 +628,9 @@ Workflow templating rules:
 
 - Store safe built-in workflow templates in git under `backend/app/workflows/comfyui/`.
 - Start with one basic text-to-image workflow using a checkpoint loader, positive/negative CLIP text encode nodes, sampler, VAE decode, and SaveImage.
+- Add one basic image-to-image workflow using LoadImage, checkpoint loader, positive/negative CLIP text encode nodes, VAEEncode, sampler with configurable denoise, VAEDecode, and SaveImage.
+- Image-to-image workflow bindings must include prompt, negative prompt, seed, width, height or resize node where applicable, checkpoint, init image, denoise strength, and save node.
+- The app should support three init-image sources for future refinement-loop work: `original_image`, `previous_generated_image`, and `user_uploaded_reference`. Use `original_image` as the default for similarity-refinement because preserving pose/composition is more important than free variation.
 - Treat custom uploaded workflow JSON as a future feature; do not allow arbitrary workflow uploads in the first ComfyUI milestone.
 - Node ids must be configurable per workflow manifest, not hard-coded in the client.
 - Validate workflow JSON before submit: must be a dict, must contain configured node ids, and must not include unexpected file upload/path mutation behavior.
@@ -632,17 +656,42 @@ Suggested workflow manifest shape:
 }
 ```
 
+Suggested image-to-image workflow manifest shape:
+
+```json
+{
+  "id": "image_to_image_basic",
+  "display_name": "Basic Image to Image",
+  "workflow_path": "backend/app/workflows/comfyui/image_to_image_basic.workflow.json",
+  "mode": "image_to_image",
+  "bindings": {
+    "prompt": "6.inputs.text",
+    "negative_prompt": "7.inputs.text",
+    "seed": "3.inputs.seed",
+    "width": "5.inputs.width",
+    "height": "5.inputs.height",
+    "checkpoint": "4.inputs.ckpt_name",
+    "init_image": "10.inputs.image",
+    "denoise": "3.inputs.denoise",
+    "save": "9"
+  },
+  "capabilities": ["image_to_image", "negative_prompt", "seed", "size", "denoise_strength", "init_image"]
+}
+```
+
 #### Schemas
 
 Add schemas under `backend/app/models/schemas.py`:
 
 - `ImageProviderInfo`: provider id, display name, default URL, requires API key, API key configured flag, supports model discovery, supports workflows.
 - `ImageProviderSelection`: provider id, base URL override, API key override, model/checkpoint, workflow id, workflow parameter overrides.
+- `ImageGenerationMode`: string/enum for `text_to_image` and `image_to_image`.
+- `ImageToImageRequest`: prompt, negative prompt, init image, denoise strength, seed, width, height, provider selection.
 - `ImageModelInfo`: id, display name, provider, available, source, reason.
 - `ImageModelListRequest` and `ImageModelListResponse`.
 - `ImageWorkflowInfo` and `ImageWorkflowListResponse`.
 - Extend `ImageGenerationRequest` with optional provider selection fields, or add a wrapper request if preserving backward compatibility is cleaner.
-- Extend `ImageGenerationResult` with optional `provider`, `workflow`, `seed`, and `metadata` fields when useful.
+- Extend `ImageGenerationResult` with optional `provider`, `workflow`, `seed`, `mode`, `denoise_strength`, `init_image_source`, and `metadata` fields when useful.
 
 #### API Endpoints
 
@@ -678,9 +727,20 @@ Extend `POST /api/generate-image`
 - Use `.env` fallback when runtime values are absent.
 - For ComfyUI, return a normal `ImageGenerationResult` so existing UI and refinement code can render it.
 
+Add or extend an image-to-image route
+
+- Preferred for backward compatibility: add `POST /api/generate-image-to-image` as multipart form.
+- Multipart fields: `image`, `prompt`, optional `negative_prompt`, `denoise_strength`, `seed`, `width`, `height`, `image_provider`, `image_base_url`, `image_api_key`, `image_model`, `image_workflow`.
+- Use ComfyUI `image_to_image_basic` by default when `image_provider=comfyui`.
+- Return the same `ImageGenerationResult` shape as text-to-image.
+- Keep `POST /api/generate-image` JSON-only for the current standalone prompt-to-image flow unless a future API version consolidates both modes.
+
 Extend `POST /api/jobs` and `POST /api/refine-image` in a later phase
 
 - Accept the same image-generation selection fields.
+- Accept image generation mode: `text_to_image` or `image_to_image`.
+- For ComfyUI image-to-image refinement, default `init_image_source=original_image` so each iteration starts from the original composition/pose instead of drifting from the last generated image.
+- Allow `init_image_source=previous_generated_image` as an advanced option for stylistic convergence experiments.
 - Store image provider/model/workflow metadata per attempt.
 - Make job cancellation call the ComfyUI interrupt path when the current attempt is running in ComfyUI.
 
@@ -702,10 +762,13 @@ UI requirements:
 - First dropdown: `Pollinations`, `ComfyUI`.
 - Pollinations panel: API key password field, model dropdown/text field.
 - ComfyUI panel: base URL field, optional API key password field, workflow dropdown, checkpoint/model dropdown, refresh button, connection status.
+- ComfyUI mode segmented control: `文生圖` and `圖生圖`.
+- In `圖生圖` mode, show an init/reference image upload, denoise strength slider, and init image source selector when running inside the refinement loop.
 - Keep prompt and negative prompt textareas unchanged.
 - Pass selected provider settings into `generateImage`.
 - Do not store typed API keys in localStorage.
 - Show provider/model/workflow used under the generated preview.
+- Show ComfyUI mode and denoise strength under the generated preview when image-to-image is used.
 - If ComfyUI is unavailable, keep the panel usable with a clear status and manual checkpoint/workflow selection.
 
 #### TDD Plan
@@ -720,11 +783,13 @@ Backend tests first:
 - `test_comfyui_workflows.py`
   - loads built-in workflow manifest.
   - patches prompt, negative prompt, seed, width, height, and checkpoint into the expected node paths.
+  - patches init image filename and denoise strength into image-to-image workflows.
   - rejects missing node bindings.
   - rejects malformed workflow JSON.
 
 - `test_comfyui_client.py`
   - posts workflow to `/prompt` with `client_id`.
+  - uploads an init image through `/upload/image` before submitting image-to-image workflow.
   - parses returned `prompt_id`.
   - polls `/history/{prompt_id}` until output appears.
   - fetches `/view` image bytes and returns base64 image.
@@ -736,10 +801,13 @@ Backend tests first:
   - `POST /api/image-generation/models` maps ComfyUI checkpoint list.
   - `GET /api/image-generation/workflows` returns built-in workflows.
   - `POST /api/generate-image` can select ComfyUI using mocked HTTP calls.
+  - `POST /api/generate-image-to-image` can select ComfyUI using mocked upload/prompt/history/view calls.
   - backward-compatible Pollinations generation still works.
 
 - `test_refinement_loop_image_provider_selection.py`
   - later phase: refinement loop uses selected image provider.
+  - ComfyUI image-to-image refinement uses `original_image` as default init image source.
+  - denoise strength is passed to each ComfyUI image-to-image attempt.
   - job attempt metadata records provider/model/workflow.
   - cancellation calls ComfyUI interrupt when applicable.
 
@@ -750,6 +818,9 @@ Frontend tests first:
 - ComfyUI key field is password-masked.
 - refresh models calls `/api/image-generation/models`.
 - workflow dropdown renders built-in workflows.
+- ComfyUI mode control switches between text-to-image and image-to-image.
+- image-to-image mode requires an init/reference image in the standalone prompt-to-image panel.
+- denoise slider value is included in image-to-image requests.
 - `generateImage` includes selected provider fields.
 - generated preview displays provider/model/workflow metadata.
 
@@ -769,14 +840,15 @@ Phase IMG-MP-2: Pollinations adapter migration.
 
 Phase IMG-MP-3: ComfyUI workflow foundation.
 
-- Add built-in workflow JSON and manifest.
+- Add built-in text-to-image and image-to-image workflow JSON and manifests.
 - Add workflow loader/patcher with node-binding validation.
-- Add tests for prompt/negative/seed/size/checkpoint patching.
+- Add tests for prompt/negative/seed/size/checkpoint/init-image/denoise patching.
 
 Phase IMG-MP-4: ComfyUI HTTP client.
 
 - Implement health/model discovery using ComfyUI HTTP endpoints.
 - Implement synchronous enqueue/poll/fetch generation.
+- Implement init image upload and image-to-image workflow submission.
 - Add timeout and safe error handling.
 - Add opt-in smoke script guarded by `COMFYUI_BASE_URL`.
 
@@ -784,11 +856,14 @@ Phase IMG-MP-5: Frontend provider selector.
 
 - Add image-generation provider selector to prompt-to-image panel.
 - Wire selected provider/model/workflow to `generateImage`.
+- Add ComfyUI mode switch, init image upload, and denoise strength slider.
 - Display provider metadata in results.
 
 Phase IMG-MP-6: Refinement loop and job integration.
 
 - Pass selected image-generation provider into `/api/refine-image` and `/api/jobs`.
+- Pass selected generation mode and denoise strength into `/api/refine-image` and `/api/jobs`.
+- For ComfyUI image-to-image mode, route the original uploaded image into every generation attempt by default.
 - Persist provider/model/workflow metadata in each attempt.
 - Add cancellation bridge to ComfyUI interrupt for active ComfyUI jobs.
 
@@ -796,6 +871,7 @@ Phase IMG-MP-7: Real local validation.
 
 - Verify Pollinations remains functional.
 - Verify ComfyUI only when local server responds.
+- Verify ComfyUI text-to-image and image-to-image workflows separately.
 - Verify generated image retrieval and storage path.
 - Never require real ComfyUI in normal unit tests or CI.
 
@@ -804,6 +880,8 @@ Phase IMG-MP-7: Real local validation.
 - The app can choose Pollinations or ComfyUI for prompt-to-image generation.
 - Existing Pollinations behavior remains backward compatible.
 - ComfyUI can generate an image from prompt/negative prompt/seed/size using a built-in workflow.
+- ComfyUI can generate image-to-image from an init image, prompt/negative prompt, seed, size, and denoise strength using a built-in workflow.
+- Refinement loop can use ComfyUI image-to-image with the original image as the default init image to better preserve pose/composition.
 - ComfyUI generated images are fetched through the backend and returned in the current `ImageGenerationResult` shape.
 - Missing ComfyUI server does not break the UI; it shows reference/workflow options and a safe status message.
 - API keys are masked and never returned raw.
