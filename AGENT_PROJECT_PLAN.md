@@ -4,7 +4,7 @@
 
 Build a web application that accepts an uploaded image, uses a selectable vision-language model to extract a high-quality image-generation prompt, uses a selectable prompt-to-image provider to generate a new image from that prompt, compares the generated image with the original image, and iteratively refines the prompt until the similarity score reaches the user-defined threshold.
 
-Current provider decision: hosted NVIDIA image-generation endpoint development is cancelled. Do not add new hosted NVIDIA image endpoint work unless the user explicitly reopens it. NVIDIA remains available as a VLM provider for initial prompt extraction and prompt refinement. Pollinations remains the default prompt-to-image provider; ComfyUI is planned as the next prompt-to-image provider.
+Current provider decision: hosted NVIDIA image-generation endpoint development is cancelled. Do not add new hosted NVIDIA image endpoint work unless the user explicitly reopens it. NVIDIA remains available as a VLM provider for initial prompt extraction and prompt refinement. Pollinations remains the default prompt-to-image provider; ComfyUI text-to-image is implemented as an optional prompt-to-image provider. ComfyUI image-to-image and multi-image-edit execution remain planned.
 
 Default similarity threshold: 80%.
 
@@ -506,8 +506,14 @@ Implementation status as of 2026-06-10:
 - Completed: image generation config endpoint for the current active provider.
 - Completed: bundled ComfyUI API workflow `qwen_image_edit_plus_text_to_image`, cataloged as the primary `text_to_image` template for future ComfyUI prompt-to-image provider development.
 - Completed: bundled ComfyUI API workflow `qwen_image_edit_plus_multi_image_edit`, cataloged as `multi_image_edit` for Qwen Image Edit Plus multi-reference image editing.
-- Planned: provider abstraction/registry for prompt-to-image generation.
-- Planned: ComfyUI client, text-to-image and image-to-image workflow templating, model/workflow discovery, frontend provider selector, and job integration.
+- Completed: lightweight prompt-to-image provider routing for `pollinations` and `comfyui` in `POST /api/generate-image`.
+- Completed: request-scoped prompt-to-image provider overrides: provider, base URL, API key, model/checkpoint, and workflow.
+- Completed: ComfyUI workflow loader/patcher for prompt, negative prompt, seed, width, height, checkpoint, sampler defaults, and filename prefix bindings.
+- Completed: ComfyUI HTTP text-to-image client with `/prompt`, `/history/{prompt_id}` polling, and `/view` image fetch.
+- Completed: `GET /api/image-generation/providers` and `GET /api/image-generation/workflows`.
+- Completed: standalone prompt-to-image frontend provider selector for Pollinations and ComfyUI text-to-image.
+- Planned: full provider abstraction/registry for prompt-to-image generation if provider count grows.
+- Planned: ComfyUI image-to-image workflow templating, model/checkpoint discovery, frontend mode switch, and job/refinement-loop integration.
 - Planned: ComfyUI image-to-image mode that can use the original uploaded image as an init image during refinement to preserve pose, composition, and subject layout.
 - Planned: real ComfyUI smoke test only when a local ComfyUI server is available.
 
@@ -760,21 +766,25 @@ Keep existing `POST /api/generate-image` backward compatible.
 
 Add:
 
+Implemented:
+
 `GET /api/image-generation/providers`
 
 - Returns Pollinations and ComfyUI provider metadata.
 - Does not test remote connectivity.
 - Does not return secrets.
 
+`GET /api/image-generation/workflows`
+
+- Returns built-in ComfyUI workflow templates and capabilities.
+
+Planned:
+
 `POST /api/image-generation/models`
 
 - Body: provider, optional base URL override, optional API key override.
 - Pollinations: return configured/reference models.
 - ComfyUI: call `/models/checkpoints` when possible; if not available, show reference/manual placeholder entries.
-
-`GET /api/image-generation/workflows`
-
-- Returns built-in ComfyUI workflow templates and capabilities.
 
 `POST /api/image-generation/test-connection`
 
@@ -787,6 +797,7 @@ Extend `POST /api/generate-image`
 - Accept optional `image_provider`, `image_base_url`, `image_api_key`, `image_model`, `image_workflow`, and generation controls.
 - Use `.env` fallback when runtime values are absent.
 - For ComfyUI, return a normal `ImageGenerationResult` so existing UI and refinement code can render it.
+- Current status: implemented for text-to-image.
 
 Add or extend an image-to-image route
 
@@ -843,6 +854,8 @@ UI requirements:
 - Show ComfyUI mode and denoise strength under the generated preview when image-to-image is used.
 - Show ComfyUI mode and reference image count under the generated preview when multi-image edit is used.
 - If ComfyUI is unavailable, keep the panel usable with a clear status and manual checkpoint/workflow selection.
+
+Current frontend status: the standalone `PromptImagePanel` includes `ImageGenerationProviderSelector`, supports Pollinations and ComfyUI text-to-image provider selection, masks API keys, loads workflow metadata, sends provider/model/workflow settings into `generateImage`, and displays provider/model/workflow metadata under the generated image. Refresh/checkpoint discovery, connection status, image-to-image mode, and multi-image-edit mode remain planned.
 
 #### TDD Plan
 
@@ -924,6 +937,7 @@ Phase IMG-MP-3: ComfyUI workflow foundation.
 - Add bundled Qwen Image Edit Plus multi-image edit workflow and catalog metadata.
 - Add workflow loader/patcher with node-binding validation.
 - Add tests for prompt/negative/seed/size/checkpoint/init-image/denoise/multi-reference-image patching.
+- Current status: completed for Qwen text-to-image template, Qwen multi-image-edit template cataloging, and text-to-image patching. Basic image-to-image template plus init-image/multi-reference execution patching remain planned.
 
 Phase IMG-MP-4: ComfyUI HTTP client.
 
@@ -933,6 +947,7 @@ Phase IMG-MP-4: ComfyUI HTTP client.
 - Implement multi-reference image upload and multi-image-edit workflow submission.
 - Add timeout and safe error handling.
 - Add opt-in smoke script guarded by `COMFYUI_BASE_URL`.
+- Current status: completed synchronous enqueue/poll/fetch for text-to-image, with timeout and safe error wrapping through the API route. Health/model discovery, init-image upload, multi-reference execution, and real smoke script remain planned.
 
 Phase IMG-MP-5: Frontend provider selector.
 
@@ -941,6 +956,7 @@ Phase IMG-MP-5: Frontend provider selector.
 - Add ComfyUI mode switch, init image upload, and denoise strength slider.
 - Add multi-image edit upload slots when a `multi_image_edit` workflow is selected.
 - Display provider metadata in results.
+- Current status: completed provider selector, provider/model/workflow wiring, masked key inputs, and result metadata display for text-to-image. Mode switch, init upload, denoise slider, and multi-image edit slots remain planned.
 
 Phase IMG-MP-6: Refinement loop and job integration.
 

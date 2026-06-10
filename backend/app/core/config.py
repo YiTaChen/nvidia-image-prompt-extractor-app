@@ -29,6 +29,15 @@ class Settings(BaseSettings):
     image_provider: str = "pollinations"
     pollinations_api_key: str = ""
     pollinations_model: str = "kontext"
+    comfyui_base_url: str = "http://127.0.0.1:8188"
+    comfyui_api_key: str = ""
+    comfyui_workflow: str = "qwen_image_edit_plus_text_to_image"
+    comfyui_image_to_image_workflow: str = "image_to_image_basic"
+    comfyui_multi_image_edit_workflow: str = "qwen_image_edit_plus_multi_image_edit"
+    comfyui_checkpoint: str = ""
+    comfyui_denoise_strength: float = Field(default=0.55, ge=0, le=1)
+    comfyui_timeout_seconds: int = Field(default=300, ge=1, le=1800)
+    comfyui_poll_interval_seconds: float = Field(default=1, gt=0, le=30)
     default_similarity_threshold: int = Field(default=80, ge=0, le=100)
     max_iterations: int = Field(default=3, ge=1, le=20)
     image_output_size: int = Field(default=1024, ge=256, le=2048)
@@ -59,6 +68,10 @@ class Settings(BaseSettings):
     @property
     def has_pollinations_key(self) -> bool:
         return bool(self.pollinations_api_key.strip())
+
+    @property
+    def has_comfyui_key(self) -> bool:
+        return bool(self.comfyui_api_key.strip())
 
     @property
     def capped_max_iterations(self) -> int:

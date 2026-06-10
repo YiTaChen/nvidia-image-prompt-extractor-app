@@ -34,6 +34,46 @@ def test_generate_image_endpoint_with_mock_client():
     assert response.json()["image_base64"]
 
 
+def test_generate_image_endpoint_accepts_request_scoped_pollinations_key(monkeypatch):
+    get_settings.cache_clear()
+    settings = get_settings()
+    settings.use_mock_nvidia = False
+    settings.image_provider = "pollinations"
+    settings.pollinations_api_key = ""
+    captured = {}
+
+    class FakeResponse:
+        content = b"pollinations-image"
+        headers = {"content-type": "image/png"}
+
+        def raise_for_status(self):
+            return None
+
+    def fake_get(url, **kwargs):
+        captured["url"] = url
+        captured["headers"] = kwargs["headers"]
+        return FakeResponse()
+
+    monkeypatch.setattr("app.clients.pollinations_image_client.requests.get", fake_get)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/generate-image",
+        json={
+            "prompt": "a quiet desk",
+            "width": 256,
+            "height": 256,
+            "image_provider": "pollinations",
+            "image_api_key": "runtime-key",
+            "image_model": "kontext",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["provider"] == "pollinations"
+    assert captured["headers"]["Authorization"] == "Bearer runtime-key"
+
+
 def test_image_generation_config_explains_missing_image_base_url():
     get_settings.cache_clear()
     settings = get_settings()

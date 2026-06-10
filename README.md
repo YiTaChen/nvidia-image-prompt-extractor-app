@@ -3,14 +3,14 @@
 Initial TDD implementation for two independent workflows:
 
 - Upload an image and ask a selectable vision-language model provider to generate an image prompt.
-- Enter a prompt and ask Pollinations to generate an image. ComfyUI is planned as the next prompt-to-image provider.
+- Enter a prompt and ask Pollinations or ComfyUI text-to-image workflows to generate an image.
 - Run a capped prompt-refinement loop with prompt extraction, image generation, similarity scoring, prompt refinement, progress events, and cancellable background jobs.
 
 ## Current VLM Provider Notes
 
 `NVIDIA_BASE_URL` is used for the hosted VLM chat endpoint.
 
-Hosted NVIDIA image generation is no longer part of the current development path. The app uses NVIDIA for VLM prompt extraction/refinement and Pollinations for prompt-to-image generation.
+Hosted NVIDIA image generation is no longer part of the current development path. The app uses NVIDIA for VLM prompt extraction/refinement and Pollinations or ComfyUI for prompt-to-image generation.
 
 ## Multi-Provider VLM Selector
 
@@ -48,7 +48,7 @@ POLLINATIONS_MODEL=kontext
 MAX_ITERATIONS=3
 ```
 
-Planned ComfyUI prompt-to-image settings:
+ComfyUI text-to-image settings:
 
 ```env
 IMAGE_PROVIDER=comfyui
@@ -63,7 +63,7 @@ COMFYUI_TIMEOUT_SECONDS=300
 COMFYUI_POLL_INTERVAL_SECONDS=1
 ```
 
-The planned ComfyUI path will enqueue built-in text-to-image, image-to-image, and multi-image-edit workflows through ComfyUI, poll for completion, fetch the generated image through the backend, and keep generated files in the existing ignored local storage paths. Image-to-image support will upload an init image to ComfyUI, patch it into the workflow, and use denoise strength to control how much of the original composition is preserved. The bundled `qwen_image_edit_plus_multi_image_edit` workflow is marked for multi-reference Qwen image editing, not classic VAEEncode image-to-image. Detailed development phases are tracked in `AGENT_PROJECT_PLAN.md`.
+The current ComfyUI path supports text-to-image generation through `POST /api/generate-image`: it loads a bundled API-format workflow, patches prompt/negative prompt/seed/size/checkpoint, enqueues `/prompt`, polls `/history/{prompt_id}`, fetches `/view`, and returns the image through the existing response shape. Image-to-image and multi-image-edit execution are still planned. Image-to-image support will upload an init image to ComfyUI, patch it into the workflow, and use denoise strength to control how much of the original composition is preserved. The bundled `qwen_image_edit_plus_multi_image_edit` workflow is marked for multi-reference Qwen image editing, not classic VAEEncode image-to-image. Detailed development phases are tracked in `AGENT_PROJECT_PLAN.md`.
 
 Bundled ComfyUI workflow metadata lives in:
 
@@ -144,8 +144,9 @@ http://127.0.0.1:5173/
 
 `POST /api/generate-image`
 
-- JSON body: `prompt`, `negative_prompt`, `width`, `height`, `seed`
-- Returns: `image_base64`, `mime_type`, `model`
+- JSON body: `prompt`, `negative_prompt`, `width`, `height`, `seed`, optional `image_provider`, `image_base_url`, `image_api_key`, `image_model`, `image_workflow`
+- Supported providers: `pollinations`, `comfyui`
+- Returns: `image_base64`, `mime_type`, `model`, optional `provider`, `workflow`, `seed`, `mode`, `metadata`
 
 `POST /api/refine-image`
 
@@ -181,6 +182,15 @@ http://127.0.0.1:5173/
 `GET /api/image-generation-config`
 
 - Returns the active prompt-to-image provider, model, base URL, and whether image generation is configured.
+
+`GET /api/image-generation/providers`
+
+- Returns safe Pollinations and ComfyUI provider metadata.
+- Does not return raw API keys.
+
+`GET /api/image-generation/workflows`
+
+- Returns bundled ComfyUI workflow templates and capabilities.
 
 ## Local Job Storage
 

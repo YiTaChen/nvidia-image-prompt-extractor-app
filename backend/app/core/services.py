@@ -1,4 +1,5 @@
 from app.clients.mock_clients import MockImageGenerationClient, MockVisionClient
+from app.clients.comfyui_image_client import ComfyUIImageGenerationClient
 from app.clients.nvidia_image_client import NvidiaImageGenerationClient
 from app.clients.nvidia_vlm_client import NvidiaVisionClient
 from app.clients.ollama_vlm_client import OllamaVisionClient
@@ -46,9 +47,27 @@ def _generic_model(settings: Settings, provider: str) -> str:
     return settings.vlm_model
 
 
-def get_image_generation_client(settings: Settings):
+def get_image_generation_client(
+    settings: Settings,
+    provider: str | None = None,
+    base_url: str | None = None,
+    api_key: str | None = None,
+    workflow_id: str | None = None,
+    model: str | None = None,
+):
     if settings.use_mock_nvidia:
         return MockImageGenerationClient()
-    if settings.image_provider == "pollinations":
-        return PollinationsImageGenerationClient(settings)
-    return NvidiaImageGenerationClient(settings)
+    selected_provider = (provider or settings.image_provider or "pollinations").strip().lower()
+    if selected_provider == "pollinations":
+        return PollinationsImageGenerationClient(settings, api_key=api_key)
+    if selected_provider == "comfyui":
+        return ComfyUIImageGenerationClient(
+            settings,
+            base_url=base_url,
+            api_key=api_key,
+            workflow_id=workflow_id,
+            checkpoint=model,
+        )
+    if selected_provider == "nvidia":
+        return NvidiaImageGenerationClient(settings)
+    raise ValueError(f"Unsupported image generation provider: {selected_provider}")

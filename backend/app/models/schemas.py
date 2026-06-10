@@ -15,12 +15,22 @@ class ImageGenerationRequest(BaseModel):
     width: int = Field(default=1024, ge=256, le=2048)
     height: int = Field(default=1024, ge=256, le=2048)
     seed: int | None = None
+    image_provider: str | None = None
+    image_base_url: str | None = None
+    image_api_key: str | None = None
+    image_model: str | None = None
+    image_workflow: str | None = None
 
 
 class ImageGenerationResult(BaseModel):
     image_base64: str
     mime_type: str = "image/png"
     model: str
+    provider: str | None = None
+    workflow: str | None = None
+    seed: int | None = None
+    mode: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class SimilarityScore(BaseModel):
@@ -55,6 +65,38 @@ class RefinementResult(BaseModel):
 
 class ErrorResponse(BaseModel):
     detail: str
+
+
+class ImageProviderInfo(BaseModel):
+    id: str
+    display_name: str
+    default_base_url: str = ""
+    default_model: str = ""
+    default_workflow: str = ""
+    requires_api_key: bool = False
+    api_key_configured: bool = False
+    supports_custom_base_url: bool = True
+    supports_workflows: bool = False
+
+
+class ImageProvidersResponse(BaseModel):
+    providers: list[ImageProviderInfo]
+
+
+class ImageWorkflowInfo(BaseModel):
+    id: str
+    display_name: str
+    mode: str
+    description: str = ""
+    workflow_path: str
+    required_checkpoint: str = ""
+    required_custom_nodes: list[str] = Field(default_factory=list)
+    capabilities: list[str] = Field(default_factory=list)
+    primary: bool = False
+
+
+class ImageWorkflowsResponse(BaseModel):
+    workflows: list[ImageWorkflowInfo]
 
 
 class VlmProviderInfo(BaseModel):

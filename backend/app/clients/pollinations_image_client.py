@@ -8,17 +8,19 @@ from app.models.schemas import ImageGenerationRequest, ImageGenerationResult
 
 
 class PollinationsImageGenerationClient:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, api_key: str | None = None):
         self.settings = settings
+        self.api_key = api_key if api_key is not None else settings.pollinations_api_key
 
     def generate_image(self, request: ImageGenerationRequest) -> ImageGenerationResult:
-        if not self.settings.has_pollinations_key:
+        if not self.api_key.strip():
             raise RuntimeError("POLLINATIONS_API_KEY is required for Pollinations image generation.")
 
-        url = _build_pollinations_url(request.prompt, self.settings.pollinations_model, request.width, request.height)
+        model = request.image_model or self.settings.pollinations_model
+        url = _build_pollinations_url(request.prompt, model, request.width, request.height)
         response = requests.get(
             url,
-            headers={"Authorization": f"Bearer {self.settings.pollinations_api_key}"},
+            headers={"Authorization": f"Bearer {self.api_key}"},
             timeout=180,
         )
         response.raise_for_status()
@@ -28,7 +30,8 @@ class PollinationsImageGenerationClient:
         return ImageGenerationResult(
             image_base64=base64.b64encode(response.content).decode("ascii"),
             mime_type=content_type,
-            model=f"pollinations/{self.settings.pollinations_model}",
+            model=f"pollinations/{model}",
+            provider="pollinations",
         )
 
 

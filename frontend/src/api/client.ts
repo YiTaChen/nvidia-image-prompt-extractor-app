@@ -8,6 +8,11 @@ export type ImageGenerationResult = {
   image_base64: string;
   mime_type: string;
   model: string;
+  provider?: string | null;
+  workflow?: string | null;
+  seed?: number | null;
+  mode?: string | null;
+  metadata?: Record<string, unknown>;
 };
 
 export type RefinementAttempt = {
@@ -83,6 +88,38 @@ export type VlmSelection = {
   apiKey: string;
 };
 
+export type ImageProviderInfo = {
+  id: string;
+  display_name: string;
+  default_base_url: string;
+  default_model: string;
+  default_workflow: string;
+  requires_api_key: boolean;
+  api_key_configured: boolean;
+  supports_custom_base_url: boolean;
+  supports_workflows: boolean;
+};
+
+export type ImageWorkflowInfo = {
+  id: string;
+  display_name: string;
+  mode: string;
+  description: string;
+  workflow_path: string;
+  required_checkpoint: string;
+  required_custom_nodes: string[];
+  capabilities: string[];
+  primary: boolean;
+};
+
+export type ImageGenerationSelection = {
+  provider: string;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  workflow: string;
+};
+
 export async function getVlmProviders(): Promise<VlmProvidersResult> {
   const response = await fetch("/api/vlm/providers");
   if (!response.ok) {
@@ -132,7 +169,27 @@ export async function extractPrompt(image: File, vlm?: VlmSelection): Promise<Pr
   return response.json();
 }
 
-export async function generateImage(prompt: string, negativePrompt = ""): Promise<ImageGenerationResult> {
+export async function getImageGenerationProviders(): Promise<{providers: ImageProviderInfo[]}> {
+  const response = await fetch("/api/image-generation/providers");
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  return response.json();
+}
+
+export async function getImageGenerationWorkflows(): Promise<{workflows: ImageWorkflowInfo[]}> {
+  const response = await fetch("/api/image-generation/workflows");
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  return response.json();
+}
+
+export async function generateImage(
+  prompt: string,
+  negativePrompt = "",
+  selection?: ImageGenerationSelection
+): Promise<ImageGenerationResult> {
   const response = await fetch("/api/generate-image", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
@@ -140,7 +197,12 @@ export async function generateImage(prompt: string, negativePrompt = ""): Promis
       prompt,
       negative_prompt: negativePrompt,
       width: 1024,
-      height: 1024
+      height: 1024,
+      image_provider: selection?.provider || null,
+      image_base_url: selection?.baseUrl || null,
+      image_api_key: selection?.apiKey || null,
+      image_model: selection?.model || null,
+      image_workflow: selection?.workflow || null
     })
   });
   if (!response.ok) {

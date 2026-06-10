@@ -1,7 +1,8 @@
 import { Image, Loader2, Wand2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { generateImage, type PromptExtractionResult } from "../api/client";
+import { generateImage, type ImageGenerationSelection, type PromptExtractionResult } from "../api/client";
+import { ImageGenerationProviderSelector } from "./ImageGenerationProviderSelector";
 
 type Props = {
   extractedPrompt: PromptExtractionResult | null;
@@ -14,6 +15,13 @@ export function PromptImagePanel({extractedPrompt}: Props) {
   const [model, setModel] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [imageSelection, setImageSelection] = useState<ImageGenerationSelection>({
+    provider: "pollinations",
+    baseUrl: "",
+    apiKey: "",
+    model: "kontext",
+    workflow: ""
+  });
 
   useEffect(() => {
     if (extractedPrompt) {
@@ -27,9 +35,9 @@ export function PromptImagePanel({extractedPrompt}: Props) {
     setError("");
     setImageUrl("");
     try {
-      const result = await generateImage(prompt, negativePrompt);
+      const result = await generateImage(prompt, negativePrompt, imageSelection);
       setImageUrl(`data:${result.mime_type};base64,${result.image_base64}`);
-      setModel(result.model);
+      setModel([result.provider, result.workflow, result.model].filter(Boolean).join(" · "));
     } catch (err) {
       setError(err instanceof Error ? err.message : "生圖失敗。");
     } finally {
@@ -59,6 +67,8 @@ export function PromptImagePanel({extractedPrompt}: Props) {
         onChange={(event) => setNegativePrompt(event.target.value)}
         placeholder="不想出現的元素"
       />
+
+      <ImageGenerationProviderSelector value={imageSelection} onChange={setImageSelection} />
 
       <button className="primary-button" type="button" onClick={handleSubmit} disabled={isLoading || !prompt.trim()}>
         {isLoading ? <Loader2 className="spin" aria-hidden="true" /> : <Wand2 aria-hidden="true" />}
