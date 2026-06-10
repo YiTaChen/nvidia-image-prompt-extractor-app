@@ -48,6 +48,9 @@ REFINEMENT_SYSTEM_PROMPT = (
     "before background similarity is considered successful. "
     "The rewritten prompt text itself must explicitly include corrected foreground-person "
     "details before any background description. "
+    "Do not simplify or shorten the previous prompt by removing locked facts. Preserve "
+    "all correct action, pose, identity-visible, clothing, and composition facts from "
+    "the previous prompt, then add targeted corrections for the visible mismatches. "
     "Return strict JSON only with prompt, negative_prompt, and analysis."
 )
 
@@ -187,7 +190,18 @@ class NvidiaVisionClient:
                                     similarity_report=similarity_report,
                                 ),
                             },
+                            {
+                                "type": "text",
+                                "text": "IMAGE A - ORIGINAL TARGET IMAGE. This is the only target to match.",
+                            },
                             {"type": "image_url", "image_url": {"url": original_image_data_url}},
+                            {
+                                "type": "text",
+                                "text": (
+                                    "IMAGE B - LAST GENERATED IMAGE TO FIX. Compare this image against "
+                                    "IMAGE A only. Do not compare generated images to each other."
+                                ),
+                            },
                             {"type": "image_url", "image_url": {"url": image_to_png_data_url(generated_image)}},
                         ],
                     },
@@ -207,6 +221,10 @@ def _build_refinement_instruction(
 ) -> str:
     return (
         "The last generated image did not meet the similarity threshold.\n\n"
+        "Image roles:\n"
+        "- IMAGE A is the ORIGINAL TARGET IMAGE.\n"
+        "- IMAGE B is the LAST GENERATED IMAGE TO FIX.\n"
+        "- Compare IMAGE B against IMAGE A only. Do not compare generated images to each other.\n\n"
         f"Previous prompt:\n{previous_prompt}\n\n"
         f"Previous negative prompt:\n{previous_negative_prompt or '(none)'}\n\n"
         "Similarity report:\n"
@@ -227,7 +245,8 @@ def _build_refinement_instruction(
         "expression, and interaction. If any of "
         "these human-subject action details are wrong, rewrite the prompt with explicit "
         "per-person constraints and add negative prompt terms for the wrong attributes. "
-        "Avoid returning the previous prompt verbatim."
+        "Avoid returning the previous prompt verbatim, but preserve every still-correct "
+        "locked fact from it. Do not shorten the prompt into a generic scene description."
     )
 
 

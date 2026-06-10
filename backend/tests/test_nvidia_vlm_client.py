@@ -98,6 +98,10 @@ def test_refine_prompt_sends_original_generated_image_and_report(monkeypatch):
     assert image_parts[0]["image_url"]["url"] == "data:image/png;base64,original"
     assert image_parts[1]["image_url"]["url"].startswith("data:image/png;base64,")
     assert "old prompt" in content[0]["text"]
+    joined_text = "\n".join(part["text"] for part in content if part["type"] == "text")
+    assert "ORIGINAL TARGET IMAGE" in joined_text
+    assert "LAST GENERATED IMAGE TO FIX" in joined_text
+    assert "Do not compare generated images to each other" in joined_text
 
 
 def test_generate_initial_prompt_applies_pose_audit(monkeypatch):

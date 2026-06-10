@@ -9,7 +9,7 @@ from typing import Any
 from app.core.config import get_settings
 from app.core.image_io import bytes_to_data_url, load_normalized_image
 from app.core.local_storage import path_for_response, save_generated_image, save_original_image
-from app.core.refinement_loop import _image_from_generation_result, _refine_prompt
+from app.core.refinement_loop import _best_attempt, _image_from_generation_result, _prompt_result_from_attempt, _refine_prompt
 from app.core.services import get_image_generation_client, get_vision_client
 from app.core.similarity import compare_images
 from app.models.schemas import (
@@ -188,7 +188,14 @@ class JobManager:
 
             if score.final_score >= record.threshold:
                 break
-            prompt_result = _refine_prompt(vision_client, record.original_content, generated_image, prompt_result, score)
+            best_attempt = _best_attempt(attempts)
+            prompt_result = _refine_prompt(
+                vision_client,
+                record.original_content,
+                _image_from_generation_result(best_attempt.generated_image_base64),
+                _prompt_result_from_attempt(best_attempt),
+                best_attempt.score,
+            )
 
         best_attempt = max(attempts, key=lambda attempt: attempt.score.final_score)
         with self._lock:

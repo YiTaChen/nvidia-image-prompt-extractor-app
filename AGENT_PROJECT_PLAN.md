@@ -1029,6 +1029,9 @@ Responsibilities:
 - Stop when max iterations is reached.
 - Preserve all attempts in job history.
 - Track best attempt even if final threshold is not reached.
+- Refine from the best-scoring attempt so far, not blindly from the latest attempt.
+- Guard refined prompts against regression: reject overly short generic prompts or prompts that drop locked action, pose, composition, subject, clothing, hair, hand-contact, bouquet, walking-direction, or background-anchor facts.
+- Label refinement images explicitly as `IMAGE A - ORIGINAL TARGET IMAGE` and `IMAGE B - LAST GENERATED IMAGE TO FIX`; never ask the VLM to compare generated images to each other.
 - Emit progress events for the UI.
 
 Pseudo-code:
@@ -1047,11 +1050,11 @@ def run_refinement_job(original_image, settings):
         if score.final_score >= settings.threshold:
             return completed(job_id, best_attempt, reached_threshold=True)
 
-        prompt_result = vlm.refine_prompt(
+        prompt_result = guarded_refine_prompt(
             original_image=original_image,
-            generated_image=generated_image,
-            previous_prompt=prompt_result.prompt,
-            similarity_report=score,
+            generated_image=best_attempt.generated_image,
+            previous_prompt=best_attempt.prompt,
+            similarity_report=best_attempt.score,
         )
 
     return completed(job_id, best_attempt, reached_threshold=False)

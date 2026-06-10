@@ -207,6 +207,10 @@ Each refinement attempt records the generated image storage path in the API resu
 
 The score is foreground-person weighted. It still reports whole-image histogram and hash scores, but final similarity now also uses subject-region layout, edge layout, and `critical_detail_score` so matching backgrounds cannot hide incorrect people, hair color, clothing, or pose.
 
+## Prompt Refinement Guardrails
+
+Each loop still compares the original image against the current generated image. When a generated image misses the threshold, the next prompt is refined from the best-scoring attempt so far, not blindly from the latest attempt. Refined prompts are guarded against regression: if the VLM returns an overly short generic prompt or drops locked action/pose details such as walking direction, viewer-left/viewer-right placement, hand contact, bouquet, clothing, hair, or background anchors, the app rejects that degraded prompt and appends a foreground-fidelity correction to the best prompt instead.
+
 ## Test Fixture
 
 The sample image provided by the user is stored at:
