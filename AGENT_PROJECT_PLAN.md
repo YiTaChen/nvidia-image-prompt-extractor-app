@@ -2,9 +2,9 @@
 
 ## Project Summary
 
-Build a web application that accepts an uploaded image, uses an NVIDIA vision-language model to extract a high-quality image-generation prompt, uses Pollinations to generate a new image from that prompt, compares the generated image with the original image, and iteratively refines the prompt until the similarity score reaches the user-defined threshold.
+Build a web application that accepts an uploaded image, uses a selectable vision-language model to extract a high-quality image-generation prompt, uses a selectable prompt-to-image provider to generate a new image from that prompt, compares the generated image with the original image, and iteratively refines the prompt until the similarity score reaches the user-defined threshold.
 
-Current provider decision: hosted NVIDIA image-generation endpoint development is cancelled. Do not add new hosted NVIDIA image endpoint work unless the user explicitly reopens it. NVIDIA remains the VLM provider for initial prompt extraction and prompt refinement.
+Current provider decision: hosted NVIDIA image-generation endpoint development is cancelled. Do not add new hosted NVIDIA image endpoint work unless the user explicitly reopens it. NVIDIA remains available as a VLM provider for initial prompt extraction and prompt refinement. Pollinations remains the default prompt-to-image provider; ComfyUI is planned as the next prompt-to-image provider.
 
 Default similarity threshold: 80%.
 
@@ -15,8 +15,8 @@ The project must be developed with TDD. All core business logic should be testab
 1. User uploads an original image.
 2. User optionally adjusts similarity threshold, max iterations, generation size, seed, and negative prompt.
 3. Backend validates and normalizes the image.
-4. NVIDIA VLM generates the initial image prompt from the original image.
-5. Pollinations image-generation model generates an image from the prompt.
+4. Selected VLM generates the initial image prompt from the original image.
+5. Selected prompt-to-image provider generates an image from the prompt.
 6. Backend calculates similarity between original image and generated image.
 7. If score is greater than or equal to the threshold, stop and return the final result.
 8. If score is lower than the threshold, send the original image, last generated image, last prompt, and score details to NVIDIA VLM to refine the prompt.
@@ -495,6 +495,320 @@ Responsibilities:
 - Save image to `backend/app/storage/generated/{job_id}/{iteration}.png`.
 - Keep Pollinations as the current development path.
 - Do not implement or prioritize hosted NVIDIA image endpoints.
+
+### Prompt-To-Image Provider Selection and ComfyUI
+
+Goal: add ComfyUI as a second prompt-to-image provider beside Pollinations, with provider selection available in the standalone prompt-to-image panel and later reused by the refinement loop/background jobs.
+
+Implementation status as of 2026-06-10:
+
+- Completed: Pollinations prompt-to-image client and `/api/generate-image`.
+- Completed: image generation config endpoint for the current active provider.
+- Planned: provider abstraction/registry for prompt-to-image generation.
+- Planned: ComfyUI client, workflow templating, model/workflow discovery, frontend provider selector, and job integration.
+- Planned: real ComfyUI smoke test only when a local ComfyUI server is available.
+
+#### ComfyUI API Assumptions
+
+The backend should call ComfyUI through the user's local or remote ComfyUI HTTP API. Initial implementation should support:
+
+- `GET /system_stats` for connection health and server metadata.
+- `GET /models` and `GET /models/{folder}` for model folder/checkpoint discovery when available.
+- `POST /prompt` to enqueue a workflow graph with a generated `client_id`.
+- `GET /history/{prompt_id}` to poll for completed outputs.
+- `GET /view?filename=...&subfolder=...&type=output` to fetch generated image bytes.
+- Optional `GET /ws?clientId=...` for live execution progress after the synchronous polling path works.
+- Optional `POST /interrupt` for cancellation after job queue integration.
+
+#### Configuration
+
+Add settings to `backend/app/core/config.py`:
+
+```env
+IMAGE_PROVIDER=pollinations
+
+POLLINATIONS_API_KEY=
+POLLINATIONS_MODEL=kontext
+
+COMFYUI_BASE_URL=http://127.0.0.1:8188
+COMFYUI_API_KEY=
+COMFYUI_WORKFLOW=text_to_image_basic
+COMFYUI_CHECKPOINT=
+COMFYUI_POSITIVE_NODE_ID=
+COMFYUI_NEGATIVE_NODE_ID=
+COMFYUI_SEED_NODE_ID=
+COMFYUI_WIDTH_NODE_ID=
+COMFYUI_HEIGHT_NODE_ID=
+COMFYUI_SAVE_NODE_ID=
+COMFYUI_TIMEOUT_SECONDS=300
+COMFYUI_POLL_INTERVAL_SECONDS=1
+```
+
+Settings rules:
+
+- `IMAGE_PROVIDER=pollinations` remains the default.
+- `IMAGE_PROVIDER=comfyui` selects ComfyUI for server-side generation.
+- ComfyUI API keys are optional because local ComfyUI usually has no auth, but the field allows reverse-proxy/API-gateway deployments.
+- Runtime overrides from the UI must be request-scoped and must not write to `.env`.
+- Never return raw `COMFYUI_API_KEY` in any API response.
+- Default ComfyUI URL should be loopback-only. Document that public ComfyUI instances should be protected by auth or a private network.
+
+#### Backend Design
+
+Add a prompt-to-image provider abstraction parallel to the VLM selector, but keep it independent from VLM providers.
+
+Recommended modules:
+
+```text
+backend/app/clients/image_generation/
+  __init__.py
+  base.py
+  registry.py
+  pollinations_provider.py
+  comfyui_provider.py
+
+backend/app/clients/comfyui_image_client.py
+backend/app/core/comfyui_workflows.py
+backend/app/workflows/comfyui/text_to_image_basic.workflow.json
+```
+
+Provider interface:
+
+```python
+class ImageGenerationProvider:
+    provider_id: str
+
+    def provider_info(self, settings: Settings) -> ImageProviderInfo:
+        ...
+
+    def list_models(self, settings: Settings, connection: ImageProviderConnection) -> ImageModelListResponse:
+        ...
+
+    def list_workflows(self, settings: Settings) -> ImageWorkflowListResponse:
+        ...
+
+    def generate_image(self, request: ImageGenerationRequest, selection: ImageProviderSelection) -> ImageGenerationResult:
+        ...
+```
+
+ComfyUI client responsibilities:
+
+- Build request-scoped `client_id`.
+- Load a workflow template JSON by id.
+- Patch prompt, negative prompt, seed, width, height, checkpoint/model, and optional sampler settings into known node ids.
+- Submit `POST /prompt` with `{ "prompt": workflow, "client_id": client_id }`.
+- Parse `prompt_id`.
+- Poll `/history/{prompt_id}` until a `SaveImage` output is available or timeout is reached.
+- Fetch the first generated image through `/view`.
+- Return `ImageGenerationResult(image_base64, mime_type, model="comfyui/{workflow_or_checkpoint}")`.
+- Preserve raw workflow output metadata internally for debugging, but do not expose local filesystem paths from ComfyUI.
+
+Workflow templating rules:
+
+- Store safe built-in workflow templates in git under `backend/app/workflows/comfyui/`.
+- Start with one basic text-to-image workflow using a checkpoint loader, positive/negative CLIP text encode nodes, sampler, VAE decode, and SaveImage.
+- Treat custom uploaded workflow JSON as a future feature; do not allow arbitrary workflow uploads in the first ComfyUI milestone.
+- Node ids must be configurable per workflow manifest, not hard-coded in the client.
+- Validate workflow JSON before submit: must be a dict, must contain configured node ids, and must not include unexpected file upload/path mutation behavior.
+- Keep ComfyUI output images out of git by saving app copies under existing ignored storage paths.
+
+Suggested workflow manifest shape:
+
+```json
+{
+  "id": "text_to_image_basic",
+  "display_name": "Basic Text to Image",
+  "workflow_path": "backend/app/workflows/comfyui/text_to_image_basic.workflow.json",
+  "bindings": {
+    "prompt": "6.inputs.text",
+    "negative_prompt": "7.inputs.text",
+    "seed": "3.inputs.seed",
+    "width": "5.inputs.width",
+    "height": "5.inputs.height",
+    "checkpoint": "4.inputs.ckpt_name",
+    "save": "9"
+  },
+  "capabilities": ["text_to_image", "negative_prompt", "seed", "size"]
+}
+```
+
+#### Schemas
+
+Add schemas under `backend/app/models/schemas.py`:
+
+- `ImageProviderInfo`: provider id, display name, default URL, requires API key, API key configured flag, supports model discovery, supports workflows.
+- `ImageProviderSelection`: provider id, base URL override, API key override, model/checkpoint, workflow id, workflow parameter overrides.
+- `ImageModelInfo`: id, display name, provider, available, source, reason.
+- `ImageModelListRequest` and `ImageModelListResponse`.
+- `ImageWorkflowInfo` and `ImageWorkflowListResponse`.
+- Extend `ImageGenerationRequest` with optional provider selection fields, or add a wrapper request if preserving backward compatibility is cleaner.
+- Extend `ImageGenerationResult` with optional `provider`, `workflow`, `seed`, and `metadata` fields when useful.
+
+#### API Endpoints
+
+Keep existing `POST /api/generate-image` backward compatible.
+
+Add:
+
+`GET /api/image-generation/providers`
+
+- Returns Pollinations and ComfyUI provider metadata.
+- Does not test remote connectivity.
+- Does not return secrets.
+
+`POST /api/image-generation/models`
+
+- Body: provider, optional base URL override, optional API key override.
+- Pollinations: return configured/reference models.
+- ComfyUI: call `/models/checkpoints` when possible; if not available, show reference/manual placeholder entries.
+
+`GET /api/image-generation/workflows`
+
+- Returns built-in ComfyUI workflow templates and capabilities.
+
+`POST /api/image-generation/test-connection`
+
+- Pollinations: checks whether API key appears configured without spending generation credits.
+- ComfyUI: calls `/system_stats` and optionally `/models/checkpoints`.
+- Returns safe status and message.
+
+Extend `POST /api/generate-image`
+
+- Accept optional `image_provider`, `image_base_url`, `image_api_key`, `image_model`, `image_workflow`, and generation controls.
+- Use `.env` fallback when runtime values are absent.
+- For ComfyUI, return a normal `ImageGenerationResult` so existing UI and refinement code can render it.
+
+Extend `POST /api/jobs` and `POST /api/refine-image` in a later phase
+
+- Accept the same image-generation selection fields.
+- Store image provider/model/workflow metadata per attempt.
+- Make job cancellation call the ComfyUI interrupt path when the current attempt is running in ComfyUI.
+
+#### Frontend Design
+
+Add a prompt-to-image provider selector to `PromptImagePanel`.
+
+Recommended components:
+
+```text
+frontend/src/components/ImageGenerationProviderSelector.tsx
+frontend/src/components/ImageGenerationModelSelect.tsx
+frontend/src/components/ComfyWorkflowSelect.tsx
+frontend/src/api/imageGeneration.ts
+```
+
+UI requirements:
+
+- First dropdown: `Pollinations`, `ComfyUI`.
+- Pollinations panel: API key password field, model dropdown/text field.
+- ComfyUI panel: base URL field, optional API key password field, workflow dropdown, checkpoint/model dropdown, refresh button, connection status.
+- Keep prompt and negative prompt textareas unchanged.
+- Pass selected provider settings into `generateImage`.
+- Do not store typed API keys in localStorage.
+- Show provider/model/workflow used under the generated preview.
+- If ComfyUI is unavailable, keep the panel usable with a clear status and manual checkpoint/workflow selection.
+
+#### TDD Plan
+
+Backend tests first:
+
+- `test_image_generation_provider_registry.py`
+  - lists `pollinations` and `comfyui`.
+  - resolves `.env` defaults.
+  - rejects unknown providers.
+
+- `test_comfyui_workflows.py`
+  - loads built-in workflow manifest.
+  - patches prompt, negative prompt, seed, width, height, and checkpoint into the expected node paths.
+  - rejects missing node bindings.
+  - rejects malformed workflow JSON.
+
+- `test_comfyui_client.py`
+  - posts workflow to `/prompt` with `client_id`.
+  - parses returned `prompt_id`.
+  - polls `/history/{prompt_id}` until output appears.
+  - fetches `/view` image bytes and returns base64 image.
+  - handles timeout with a clear error.
+  - handles queue/server errors without leaking secrets.
+
+- `test_image_generation_routes.py`
+  - `GET /api/image-generation/providers` returns safe metadata.
+  - `POST /api/image-generation/models` maps ComfyUI checkpoint list.
+  - `GET /api/image-generation/workflows` returns built-in workflows.
+  - `POST /api/generate-image` can select ComfyUI using mocked HTTP calls.
+  - backward-compatible Pollinations generation still works.
+
+- `test_refinement_loop_image_provider_selection.py`
+  - later phase: refinement loop uses selected image provider.
+  - job attempt metadata records provider/model/workflow.
+  - cancellation calls ComfyUI interrupt when applicable.
+
+Frontend tests first:
+
+- provider dropdown defaults to `.env` active provider.
+- changing provider swaps connection fields.
+- ComfyUI key field is password-masked.
+- refresh models calls `/api/image-generation/models`.
+- workflow dropdown renders built-in workflows.
+- `generateImage` includes selected provider fields.
+- generated preview displays provider/model/workflow metadata.
+
+#### Development Phases
+
+Phase IMG-MP-1: Backend provider contracts.
+
+- Add schemas, provider interface, registry, and provider metadata endpoints.
+- Keep `/api/generate-image` backward compatible.
+- Add tests before implementation.
+
+Phase IMG-MP-2: Pollinations adapter migration.
+
+- Wrap existing `PollinationsImageGenerationClient` behind the image provider interface.
+- Preserve current behavior and tests.
+- Ensure no additional Pollinations calls are made during provider discovery.
+
+Phase IMG-MP-3: ComfyUI workflow foundation.
+
+- Add built-in workflow JSON and manifest.
+- Add workflow loader/patcher with node-binding validation.
+- Add tests for prompt/negative/seed/size/checkpoint patching.
+
+Phase IMG-MP-4: ComfyUI HTTP client.
+
+- Implement health/model discovery using ComfyUI HTTP endpoints.
+- Implement synchronous enqueue/poll/fetch generation.
+- Add timeout and safe error handling.
+- Add opt-in smoke script guarded by `COMFYUI_BASE_URL`.
+
+Phase IMG-MP-5: Frontend provider selector.
+
+- Add image-generation provider selector to prompt-to-image panel.
+- Wire selected provider/model/workflow to `generateImage`.
+- Display provider metadata in results.
+
+Phase IMG-MP-6: Refinement loop and job integration.
+
+- Pass selected image-generation provider into `/api/refine-image` and `/api/jobs`.
+- Persist provider/model/workflow metadata in each attempt.
+- Add cancellation bridge to ComfyUI interrupt for active ComfyUI jobs.
+
+Phase IMG-MP-7: Real local validation.
+
+- Verify Pollinations remains functional.
+- Verify ComfyUI only when local server responds.
+- Verify generated image retrieval and storage path.
+- Never require real ComfyUI in normal unit tests or CI.
+
+#### Acceptance Criteria
+
+- The app can choose Pollinations or ComfyUI for prompt-to-image generation.
+- Existing Pollinations behavior remains backward compatible.
+- ComfyUI can generate an image from prompt/negative prompt/seed/size using a built-in workflow.
+- ComfyUI generated images are fetched through the backend and returned in the current `ImageGenerationResult` shape.
+- Missing ComfyUI server does not break the UI; it shows reference/workflow options and a safe status message.
+- API keys are masked and never returned raw.
+- Unit tests cover provider selection, workflow patching, ComfyUI enqueue/history/view behavior, and route integration.
+- Real ComfyUI smoke tests are opt-in.
 
 ### Similarity Scoring
 

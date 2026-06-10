@@ -3,7 +3,7 @@
 Initial TDD implementation for two independent workflows:
 
 - Upload an image and ask a selectable vision-language model provider to generate an image prompt.
-- Enter a prompt and ask Pollinations to generate an image.
+- Enter a prompt and ask Pollinations to generate an image. ComfyUI is planned as the next prompt-to-image provider.
 - Run a capped prompt-refinement loop with prompt extraction, image generation, similarity scoring, prompt refinement, progress events, and cancellable background jobs.
 
 ## Current VLM Provider Notes
@@ -47,6 +47,20 @@ POLLINATIONS_API_KEY=your_key_here
 POLLINATIONS_MODEL=kontext
 MAX_ITERATIONS=3
 ```
+
+Planned ComfyUI prompt-to-image settings:
+
+```env
+IMAGE_PROVIDER=comfyui
+COMFYUI_BASE_URL=http://127.0.0.1:8188
+COMFYUI_API_KEY=
+COMFYUI_WORKFLOW=text_to_image_basic
+COMFYUI_CHECKPOINT=
+COMFYUI_TIMEOUT_SECONDS=300
+COMFYUI_POLL_INTERVAL_SECONDS=1
+```
+
+The planned ComfyUI path will enqueue a built-in workflow through ComfyUI, poll for completion, fetch the generated image through the backend, and keep generated files in the existing ignored local storage paths. Detailed development phases are tracked in `AGENT_PROJECT_PLAN.md`.
 
 The backend caps the refinement loop at 3 iterations even if a higher value is requested, to avoid burning free image-generation quota.
 
