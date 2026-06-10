@@ -1,0 +1,74 @@
+{
+  "workflows": [
+    {
+      "id": "qwen_image_edit_plus_multi_image_edit",
+      "display_name": "Qwen Image Edit Plus - Multi Image Edit",
+      "mode": "multi_image_edit",
+      "format": "comfyui_api",
+      "workflow_path": "backend/app/workflows/comfyui/qwen_image_edit_plus_multi_image_edit.workflow.json",
+      "source": {
+        "type": "embedded_png_workflow",
+        "filename": "workflow (1).png",
+        "workflow_id": "f031165e-4be0-4667-9f17-23495e815e8c"
+      },
+      "description": "Uses TextEncodeQwenImageEditPlus with two reference/input images as conditioning for Qwen image editing, then samples from an empty latent target. This is multi-image edit conditioning, not classic VAEEncode image-to-image.",
+      "required_checkpoint": "Qwen-Rapid-AIO-NSFW-v19.safetensors",
+      "required_custom_nodes": [
+        "TextEncodeQwenImageEditPlus"
+      ],
+      "bindings": {
+        "prompt": "8.inputs.prompt",
+        "negative_prompt": "2.inputs.prompt",
+        "checkpoint": "9.inputs.ckpt_name",
+        "seed": "5.inputs.seed",
+        "steps": "5.inputs.steps",
+        "cfg": "5.inputs.cfg",
+        "sampler": "5.inputs.sampler_name",
+        "scheduler": "5.inputs.scheduler",
+        "denoise": "5.inputs.denoise",
+        "width": "7.inputs.width",
+        "height": "7.inputs.height",
+        "image1": "6.inputs.image",
+        "image2": "16.inputs.image",
+        "filename_prefix": "1.inputs.filename_prefix"
+      },
+      "reference_images": [
+        {
+          "binding": "image1",
+          "node_id": "6",
+          "default_filename": "截圖 2026-04-26 下午1.11.41.png"
+        },
+        {
+          "binding": "image2",
+          "node_id": "16",
+          "default_filename": "ahtehaethae.png"
+        }
+      ],
+      "defaults": {
+        "checkpoint": "Qwen-Rapid-AIO-NSFW-v19.safetensors",
+        "width": 1000,
+        "height": 1304,
+        "steps": 6,
+        "cfg": 1,
+        "sampler": "euler_ancestral",
+        "scheduler": "beta",
+        "denoise": 1,
+        "filename_prefix": "ComfyUI"
+      },
+      "capabilities": [
+        "multi_image_edit",
+        "reference_images",
+        "negative_prompt",
+        "seed",
+        "size",
+        "checkpoint",
+        "sampler_settings"
+      ],
+      "notes": [
+        "Before running through ComfyUI API, upload replacement reference images with /upload/image and patch image1/image2 to the returned filenames.",
+        "This workflow requires Qwen image edit support through the TextEncodeQwenImageEditPlus custom node.",
+        "KSampler latent_image comes from EmptyLatentImage, so this workflow should not be labeled classic image_to_image."
+      ]
+    }
+  ]
+}

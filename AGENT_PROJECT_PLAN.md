@@ -504,6 +504,7 @@ Implementation status as of 2026-06-10:
 
 - Completed: Pollinations prompt-to-image client and `/api/generate-image`.
 - Completed: image generation config endpoint for the current active provider.
+- Completed: bundled ComfyUI API workflow `qwen_image_edit_plus_multi_image_edit`, cataloged as `multi_image_edit` for Qwen Image Edit Plus multi-reference image editing.
 - Planned: provider abstraction/registry for prompt-to-image generation.
 - Planned: ComfyUI client, text-to-image and image-to-image workflow templating, model/workflow discovery, frontend provider selector, and job integration.
 - Planned: ComfyUI image-to-image mode that can use the original uploaded image as an init image during refinement to preserve pose, composition, and subject layout.
@@ -538,6 +539,7 @@ COMFYUI_BASE_URL=http://127.0.0.1:8188
 COMFYUI_API_KEY=
 COMFYUI_WORKFLOW=text_to_image_basic
 COMFYUI_IMAGE_TO_IMAGE_WORKFLOW=image_to_image_basic
+COMFYUI_MULTI_IMAGE_EDIT_WORKFLOW=qwen_image_edit_plus_multi_image_edit
 COMFYUI_CHECKPOINT=
 COMFYUI_DENOISE_STRENGTH=0.55
 COMFYUI_POSITIVE_NODE_ID=
@@ -558,6 +560,7 @@ Settings rules:
 - `IMAGE_PROVIDER=comfyui` selects ComfyUI for server-side generation.
 - `COMFYUI_WORKFLOW` is the default text-to-image workflow.
 - `COMFYUI_IMAGE_TO_IMAGE_WORKFLOW` is the default image-to-image workflow.
+- `COMFYUI_MULTI_IMAGE_EDIT_WORKFLOW` is the default multi-reference image edit workflow.
 - `COMFYUI_DENOISE_STRENGTH` controls how much ComfyUI changes the init image in image-to-image mode. Suggested default range: `0.45` to `0.65`; lower values preserve the original image more strongly, higher values allow larger changes.
 - ComfyUI API keys are optional because local ComfyUI usually has no auth, but the field allows reverse-proxy/API-gateway deployments.
 - Runtime overrides from the UI must be request-scoped and must not write to `.env`.
@@ -580,8 +583,10 @@ backend/app/clients/image_generation/
 
 backend/app/clients/comfyui_image_client.py
 backend/app/core/comfyui_workflows.py
+backend/app/workflows/comfyui/workflow_catalog.json
 backend/app/workflows/comfyui/text_to_image_basic.workflow.json
 backend/app/workflows/comfyui/image_to_image_basic.workflow.json
+backend/app/workflows/comfyui/qwen_image_edit_plus_multi_image_edit.workflow.json
 ```
 
 Provider interface:
@@ -627,9 +632,12 @@ ComfyUI client responsibilities:
 Workflow templating rules:
 
 - Store safe built-in workflow templates in git under `backend/app/workflows/comfyui/`.
+- Store workflow metadata in `backend/app/workflows/comfyui/workflow_catalog.json`.
 - Start with one basic text-to-image workflow using a checkpoint loader, positive/negative CLIP text encode nodes, sampler, VAE decode, and SaveImage.
 - Add one basic image-to-image workflow using LoadImage, checkpoint loader, positive/negative CLIP text encode nodes, VAEEncode, sampler with configurable denoise, VAEDecode, and SaveImage.
 - Image-to-image workflow bindings must include prompt, negative prompt, seed, width, height or resize node where applicable, checkpoint, init image, denoise strength, and save node.
+- Include the bundled `qwen_image_edit_plus_multi_image_edit` workflow as a separate `multi_image_edit` mode. It uses `TextEncodeQwenImageEditPlus` with two LoadImage inputs as reference/image-edit conditioning and an `EmptyLatentImage` target. It is not classic image-to-image because it does not feed a VAE-encoded init image into the sampler latent.
+- Multi-image-edit workflow bindings must include prompt, negative prompt, image1, image2, checkpoint, seed, width, height, sampler settings, denoise, and filename prefix.
 - The app should support three init-image sources for future refinement-loop work: `original_image`, `previous_generated_image`, and `user_uploaded_reference`. Use `original_image` as the default for similarity-refinement because preserving pose/composition is more important than free variation.
 - Treat custom uploaded workflow JSON as a future feature; do not allow arbitrary workflow uploads in the first ComfyUI milestone.
 - Node ids must be configurable per workflow manifest, not hard-coded in the client.
@@ -679,6 +687,31 @@ Suggested image-to-image workflow manifest shape:
 }
 ```
 
+Bundled multi-image edit workflow manifest entry:
+
+```json
+{
+  "id": "qwen_image_edit_plus_multi_image_edit",
+  "display_name": "Qwen Image Edit Plus - Multi Image Edit",
+  "workflow_path": "backend/app/workflows/comfyui/qwen_image_edit_plus_multi_image_edit.workflow.json",
+  "mode": "multi_image_edit",
+  "required_checkpoint": "Qwen-Rapid-AIO-NSFW-v19.safetensors",
+  "required_custom_nodes": ["TextEncodeQwenImageEditPlus"],
+  "bindings": {
+    "prompt": "8.inputs.prompt",
+    "negative_prompt": "2.inputs.prompt",
+    "image1": "6.inputs.image",
+    "image2": "16.inputs.image",
+    "checkpoint": "9.inputs.ckpt_name",
+    "seed": "5.inputs.seed",
+    "width": "7.inputs.width",
+    "height": "7.inputs.height",
+    "denoise": "5.inputs.denoise"
+  },
+  "capabilities": ["multi_image_edit", "reference_images", "negative_prompt", "seed", "size", "sampler_settings"]
+}
+```
+
 #### Schemas
 
 Add schemas under `backend/app/models/schemas.py`:
@@ -686,7 +719,9 @@ Add schemas under `backend/app/models/schemas.py`:
 - `ImageProviderInfo`: provider id, display name, default URL, requires API key, API key configured flag, supports model discovery, supports workflows.
 - `ImageProviderSelection`: provider id, base URL override, API key override, model/checkpoint, workflow id, workflow parameter overrides.
 - `ImageGenerationMode`: string/enum for `text_to_image` and `image_to_image`.
+- Extend `ImageGenerationMode` with `multi_image_edit` for Qwen/edit workflows that use multiple reference images without VAE-encoded init latent.
 - `ImageToImageRequest`: prompt, negative prompt, init image, denoise strength, seed, width, height, provider selection.
+- `MultiImageEditRequest`: prompt, negative prompt, one or more reference images, seed, width, height, provider selection, workflow id.
 - `ImageModelInfo`: id, display name, provider, available, source, reason.
 - `ImageModelListRequest` and `ImageModelListResponse`.
 - `ImageWorkflowInfo` and `ImageWorkflowListResponse`.
@@ -735,10 +770,19 @@ Add or extend an image-to-image route
 - Return the same `ImageGenerationResult` shape as text-to-image.
 - Keep `POST /api/generate-image` JSON-only for the current standalone prompt-to-image flow unless a future API version consolidates both modes.
 
+Add a multi-image edit route
+
+- Preferred route: `POST /api/generate-image-edit` as multipart form.
+- Multipart fields: `image1`, optional `image2`, optional `image3`, optional `image4`, `prompt`, optional `negative_prompt`, `seed`, `width`, `height`, `image_provider`, `image_base_url`, `image_api_key`, `image_model`, `image_workflow`.
+- Use ComfyUI `qwen_image_edit_plus_multi_image_edit` by default when `image_provider=comfyui` and mode is `multi_image_edit`.
+- Upload each reference image through ComfyUI `/upload/image`, patch `image1`/`image2`/etc. bindings to returned filenames, then submit `/prompt`.
+- Return the same `ImageGenerationResult` shape as text-to-image, with `mode=multi_image_edit` and `workflow=qwen_image_edit_plus_multi_image_edit`.
+
 Extend `POST /api/jobs` and `POST /api/refine-image` in a later phase
 
 - Accept the same image-generation selection fields.
 - Accept image generation mode: `text_to_image` or `image_to_image`.
+- Accept image generation mode `multi_image_edit` when the user wants Qwen-style reference-image editing.
 - For ComfyUI image-to-image refinement, default `init_image_source=original_image` so each iteration starts from the original composition/pose instead of drifting from the last generated image.
 - Allow `init_image_source=previous_generated_image` as an advanced option for stylistic convergence experiments.
 - Store image provider/model/workflow metadata per attempt.
@@ -763,12 +807,15 @@ UI requirements:
 - Pollinations panel: API key password field, model dropdown/text field.
 - ComfyUI panel: base URL field, optional API key password field, workflow dropdown, checkpoint/model dropdown, refresh button, connection status.
 - ComfyUI mode segmented control: `文生圖` and `圖生圖`.
+- Extend ComfyUI mode segmented control with `多圖 Edit` when a workflow with `multi_image_edit` mode is present in the catalog.
 - In `圖生圖` mode, show an init/reference image upload, denoise strength slider, and init image source selector when running inside the refinement loop.
+- In `多圖 Edit` mode, show multiple reference image upload slots mapped to workflow bindings such as `image1` and `image2`.
 - Keep prompt and negative prompt textareas unchanged.
 - Pass selected provider settings into `generateImage`.
 - Do not store typed API keys in localStorage.
 - Show provider/model/workflow used under the generated preview.
 - Show ComfyUI mode and denoise strength under the generated preview when image-to-image is used.
+- Show ComfyUI mode and reference image count under the generated preview when multi-image edit is used.
 - If ComfyUI is unavailable, keep the panel usable with a clear status and manual checkpoint/workflow selection.
 
 #### TDD Plan
@@ -782,8 +829,10 @@ Backend tests first:
 
 - `test_comfyui_workflows.py`
   - loads built-in workflow manifest.
+  - loads workflow catalog and includes `qwen_image_edit_plus_multi_image_edit` as `multi_image_edit`.
   - patches prompt, negative prompt, seed, width, height, and checkpoint into the expected node paths.
   - patches init image filename and denoise strength into image-to-image workflows.
+  - patches image1/image2 filenames into multi-image-edit workflows.
   - rejects missing node bindings.
   - rejects malformed workflow JSON.
 
@@ -802,6 +851,7 @@ Backend tests first:
   - `GET /api/image-generation/workflows` returns built-in workflows.
   - `POST /api/generate-image` can select ComfyUI using mocked HTTP calls.
   - `POST /api/generate-image-to-image` can select ComfyUI using mocked upload/prompt/history/view calls.
+  - `POST /api/generate-image-edit` can select ComfyUI using mocked multi-reference upload/prompt/history/view calls.
   - backward-compatible Pollinations generation still works.
 
 - `test_refinement_loop_image_provider_selection.py`
@@ -819,7 +869,9 @@ Frontend tests first:
 - refresh models calls `/api/image-generation/models`.
 - workflow dropdown renders built-in workflows.
 - ComfyUI mode control switches between text-to-image and image-to-image.
+- ComfyUI mode control includes multi-image edit when catalog contains a `multi_image_edit` workflow.
 - image-to-image mode requires an init/reference image in the standalone prompt-to-image panel.
+- multi-image edit mode requires at least one reference image and maps uploaded files to image bindings.
 - denoise slider value is included in image-to-image requests.
 - `generateImage` includes selected provider fields.
 - generated preview displays provider/model/workflow metadata.
@@ -841,14 +893,16 @@ Phase IMG-MP-2: Pollinations adapter migration.
 Phase IMG-MP-3: ComfyUI workflow foundation.
 
 - Add built-in text-to-image and image-to-image workflow JSON and manifests.
+- Add bundled Qwen Image Edit Plus multi-image edit workflow and catalog metadata.
 - Add workflow loader/patcher with node-binding validation.
-- Add tests for prompt/negative/seed/size/checkpoint/init-image/denoise patching.
+- Add tests for prompt/negative/seed/size/checkpoint/init-image/denoise/multi-reference-image patching.
 
 Phase IMG-MP-4: ComfyUI HTTP client.
 
 - Implement health/model discovery using ComfyUI HTTP endpoints.
 - Implement synchronous enqueue/poll/fetch generation.
 - Implement init image upload and image-to-image workflow submission.
+- Implement multi-reference image upload and multi-image-edit workflow submission.
 - Add timeout and safe error handling.
 - Add opt-in smoke script guarded by `COMFYUI_BASE_URL`.
 
@@ -857,6 +911,7 @@ Phase IMG-MP-5: Frontend provider selector.
 - Add image-generation provider selector to prompt-to-image panel.
 - Wire selected provider/model/workflow to `generateImage`.
 - Add ComfyUI mode switch, init image upload, and denoise strength slider.
+- Add multi-image edit upload slots when a `multi_image_edit` workflow is selected.
 - Display provider metadata in results.
 
 Phase IMG-MP-6: Refinement loop and job integration.
@@ -872,6 +927,7 @@ Phase IMG-MP-7: Real local validation.
 - Verify Pollinations remains functional.
 - Verify ComfyUI only when local server responds.
 - Verify ComfyUI text-to-image and image-to-image workflows separately.
+- Verify ComfyUI Qwen Image Edit Plus multi-image-edit workflow only when required checkpoint/custom node are available.
 - Verify generated image retrieval and storage path.
 - Never require real ComfyUI in normal unit tests or CI.
 
@@ -881,6 +937,7 @@ Phase IMG-MP-7: Real local validation.
 - Existing Pollinations behavior remains backward compatible.
 - ComfyUI can generate an image from prompt/negative prompt/seed/size using a built-in workflow.
 - ComfyUI can generate image-to-image from an init image, prompt/negative prompt, seed, size, and denoise strength using a built-in workflow.
+- ComfyUI can generate multi-image-edit output from at least one reference image and prompt using the bundled `qwen_image_edit_plus_multi_image_edit` API workflow when its checkpoint/custom node are installed.
 - Refinement loop can use ComfyUI image-to-image with the original image as the default init image to better preserve pose/composition.
 - ComfyUI generated images are fetched through the backend and returned in the current `ImageGenerationResult` shape.
 - Missing ComfyUI server does not break the UI; it shows reference/workflow options and a safe status message.

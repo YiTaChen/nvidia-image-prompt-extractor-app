@@ -56,13 +56,21 @@ COMFYUI_BASE_URL=http://127.0.0.1:8188
 COMFYUI_API_KEY=
 COMFYUI_WORKFLOW=text_to_image_basic
 COMFYUI_IMAGE_TO_IMAGE_WORKFLOW=image_to_image_basic
+COMFYUI_MULTI_IMAGE_EDIT_WORKFLOW=qwen_image_edit_plus_multi_image_edit
 COMFYUI_CHECKPOINT=
 COMFYUI_DENOISE_STRENGTH=0.55
 COMFYUI_TIMEOUT_SECONDS=300
 COMFYUI_POLL_INTERVAL_SECONDS=1
 ```
 
-The planned ComfyUI path will enqueue built-in text-to-image and image-to-image workflows through ComfyUI, poll for completion, fetch the generated image through the backend, and keep generated files in the existing ignored local storage paths. Image-to-image support will upload an init image to ComfyUI, patch it into the workflow, and use denoise strength to control how much of the original composition is preserved. Detailed development phases are tracked in `AGENT_PROJECT_PLAN.md`.
+The planned ComfyUI path will enqueue built-in text-to-image, image-to-image, and multi-image-edit workflows through ComfyUI, poll for completion, fetch the generated image through the backend, and keep generated files in the existing ignored local storage paths. Image-to-image support will upload an init image to ComfyUI, patch it into the workflow, and use denoise strength to control how much of the original composition is preserved. The bundled `qwen_image_edit_plus_multi_image_edit` workflow is marked for multi-reference Qwen image editing, not classic VAEEncode image-to-image. Detailed development phases are tracked in `AGENT_PROJECT_PLAN.md`.
+
+Bundled ComfyUI workflow metadata lives in:
+
+```text
+backend/app/workflows/comfyui/workflow_catalog.json
+backend/app/workflows/comfyui/qwen_image_edit_plus_multi_image_edit.workflow.json
+```
 
 The backend caps the refinement loop at 3 iterations even if a higher value is requested, to avoid burning free image-generation quota.
 
