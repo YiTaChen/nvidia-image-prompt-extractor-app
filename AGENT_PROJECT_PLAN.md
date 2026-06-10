@@ -174,6 +174,20 @@ Goal: replace the hard-coded NVIDIA image-to-prompt model setting with a two-lev
 
 This feature applies to image-to-text/image-to-prompt VLM usage first: initial prompt extraction, pose/action audit, and prompt refinement. Prompt-to-image generation remains a separate provider path.
 
+Implementation status as of 2026-06-09:
+
+- Completed: backend schemas, provider base class, provider registry, `GET /api/vlm/providers`, and `POST /api/vlm/models`.
+- Completed: NVIDIA model discovery through `/models`, reference catalog fallback when the key is missing or discovery fails, and runtime NVIDIA model/base URL/key selection for `POST /api/extract-prompt`.
+- Completed: LM Studio reference catalog and OpenAI-compatible `/models` discovery, plus an OpenAI-compatible VLM prompt client for clone users with local LM Studio servers.
+- Completed: Ollama reference catalog and `/api/tags` discovery, plus an Ollama `/api/chat` VLM prompt client for clone users with local Ollama servers.
+- Completed: image-to-prompt frontend selector with provider dropdown, URL field, password-masked key field, model dropdown, model refresh, and selected provider/model submission.
+- Completed: unit/API tests for provider listing, model discovery fallback, available-model sorting, Ollama tag mapping, LM Studio failure fallback, and runtime NVIDIA extraction selection.
+- Not completed: Gemini provider adapter.
+- Not completed: `/api/vlm/test-connection`.
+- Not completed: passing VLM selection into background jobs/refinement loop UI and storing provider/model metadata in job attempts.
+- Not completed: dedicated frontend interaction tests for the selector.
+- Not completed: real LM Studio/Ollama smoke tests, because no local test servers are currently available in this environment.
+
 #### UX Requirements
 
 First-level dropdown: platform/provider.

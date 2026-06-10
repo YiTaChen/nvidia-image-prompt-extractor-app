@@ -45,9 +45,83 @@ export type JobEvent = {
   score: number | null;
 };
 
-export async function extractPrompt(image: File): Promise<PromptExtractionResult> {
+export type VlmProviderInfo = {
+  id: string;
+  display_name: string;
+  default_base_url: string;
+  default_model: string;
+  requires_api_key: boolean;
+  api_key_configured: boolean;
+  supports_custom_base_url: boolean;
+};
+
+export type VlmModelInfo = {
+  id: string;
+  display_name: string;
+  provider: string;
+  available: boolean;
+  capabilities: string[];
+  source: string;
+  reason: string | null;
+};
+
+export type VlmProvidersResult = {
+  providers: VlmProviderInfo[];
+};
+
+export type VlmModelListResult = {
+  provider: string;
+  connection_status: string;
+  message: string;
+  models: VlmModelInfo[];
+};
+
+export type VlmSelection = {
+  provider: string;
+  model: string;
+  baseUrl: string;
+  apiKey: string;
+};
+
+export async function getVlmProviders(): Promise<VlmProvidersResult> {
+  const response = await fetch("/api/vlm/providers");
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  return response.json();
+}
+
+export async function listVlmModels(selection: Partial<VlmSelection> & {provider: string}): Promise<VlmModelListResult> {
+  const response = await fetch("/api/vlm/models", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      provider: selection.provider,
+      base_url: selection.baseUrl || null,
+      api_key: selection.apiKey || null
+    })
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  return response.json();
+}
+
+export async function extractPrompt(image: File, vlm?: VlmSelection): Promise<PromptExtractionResult> {
   const formData = new FormData();
   formData.append("image", image);
+  if (vlm?.provider) {
+    formData.append("vlm_provider", vlm.provider);
+  }
+  if (vlm?.model) {
+    formData.append("vlm_model", vlm.model);
+  }
+  if (vlm?.baseUrl) {
+    formData.append("vlm_base_url", vlm.baseUrl);
+  }
+  if (vlm?.apiKey) {
+    formData.append("vlm_api_key", vlm.apiKey);
+  }
   const response = await fetch("/api/extract-prompt", {
     method: "POST",
     body: formData

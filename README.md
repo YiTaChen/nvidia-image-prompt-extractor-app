@@ -2,33 +2,41 @@
 
 Initial TDD implementation for two independent workflows:
 
-- Upload an image and ask an NVIDIA vision-language model to generate an image prompt.
+- Upload an image and ask a selectable vision-language model provider to generate an image prompt.
 - Enter a prompt and ask Pollinations to generate an image.
 - Run a capped prompt-refinement loop with prompt extraction, image generation, similarity scoring, prompt refinement, progress events, and cancellable background jobs.
 
-## Current NVIDIA Endpoint Notes
+## Current VLM Provider Notes
 
 `NVIDIA_BASE_URL` is used for the hosted VLM chat endpoint.
 
 Hosted NVIDIA image generation is no longer part of the current development path. The app uses NVIDIA for VLM prompt extraction/refinement and Pollinations for prompt-to-image generation.
 
-## Planned Multi-Provider VLM Selector
+## Multi-Provider VLM Selector
 
-The next image-to-prompt milestone is a two-level VLM selector:
+The image-to-prompt panel includes a two-level VLM selector:
 
-- First dropdown: provider, such as NVIDIA, Gemini AI Studio API, LM Studio, or Ollama.
+- First dropdown: provider. Current implemented providers are NVIDIA, LM Studio, and Ollama.
 - Second panel: provider-specific URL/key fields and a model dropdown.
 - Model lists should show available discovered models first, followed by unavailable/reference models.
 - Missing or invalid keys should not hide the reference model catalog.
 - Secret fields must be password-masked and never returned raw from backend responses.
+
+Gemini AI Studio remains planned in `AGENT_PROJECT_PLAN.md`.
 
 Detailed implementation tasks are tracked in `AGENT_PROJECT_PLAN.md`.
 
 Example:
 
 ```env
+VLM_PROVIDER=nvidia
+VLM_MODEL=nvidia/nemotron-nano-12b-v2-vl
 NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
 NVIDIA_VLM_MODEL=nvidia/llama-3.1-nemotron-nano-vl-8b-v1
+LM_STUDIO_BASE_URL=http://localhost:1234/v1
+LM_STUDIO_VLM_MODEL=
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_VLM_MODEL=
 ```
 
 For development, the app defaults to Pollinations for prompt-to-image:
@@ -95,8 +103,19 @@ http://127.0.0.1:5173/
 
 `POST /api/extract-prompt`
 
-- Multipart form field: `image`
+- Multipart form fields: `image`, optional `vlm_provider`, `vlm_model`, `vlm_base_url`, `vlm_api_key`
 - Returns: `prompt`, `negative_prompt`, `analysis`
+
+`GET /api/vlm/providers`
+
+- Returns selectable VLM providers and safe default metadata.
+- Does not return raw API keys.
+
+`POST /api/vlm/models`
+
+- JSON body: `provider`, optional `base_url`, optional `api_key`
+- Returns available provider-discovered models first, then built-in reference models.
+- Keeps reference models visible when a key is missing or a local LM Studio/Ollama server is unavailable.
 
 `POST /api/generate-image`
 

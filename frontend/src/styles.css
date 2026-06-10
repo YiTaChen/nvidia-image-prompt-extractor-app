@@ -86,6 +86,23 @@ textarea {
   line-height: 1.5;
 }
 
+select,
+input {
+  min-height: 40px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0 10px;
+  color: #111827;
+  background: #ffffff;
+  font: inherit;
+}
+
+select:disabled,
+input:disabled {
+  color: #64748b;
+  background: #f8fafc;
+}
+
 .upload-box {
   display: grid;
   place-items: center;
@@ -140,11 +157,7 @@ textarea {
 }
 
 .loop-controls input {
-  min-height: 40px;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  padding: 0 10px;
-  font: inherit;
+  width: 100%;
 }
 
 .loop-result {
@@ -231,6 +244,81 @@ textarea {
 .secondary-button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
+}
+
+.icon-button {
+  display: inline-grid;
+  place-items: center;
+  min-width: 42px;
+  min-height: 40px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #334155;
+  cursor: pointer;
+}
+
+.icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.icon-button svg {
+  width: 18px;
+  height: 18px;
+}
+
+.vlm-selector {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.75fr) minmax(220px, 1.35fr);
+  gap: 10px;
+  border: 1px solid #d9e0eb;
+  border-radius: 8px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
+.vlm-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.vlm-field label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vlm-field label svg {
+  width: 15px;
+  height: 15px;
+  color: #1f7a5a;
+}
+
+.vlm-field select,
+.vlm-field input {
+  width: 100%;
+  min-width: 0;
+}
+
+.vlm-model-field {
+  grid-column: 1 / -1;
+}
+
+.vlm-model-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px;
+  gap: 8px;
+}
+
+.vlm-status {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .event-list {

@@ -57,6 +57,43 @@ class ErrorResponse(BaseModel):
     detail: str
 
 
+class VlmProviderInfo(BaseModel):
+    id: str
+    display_name: str
+    default_base_url: str
+    default_model: str
+    requires_api_key: bool = False
+    api_key_configured: bool = False
+    supports_custom_base_url: bool = True
+
+
+class VlmProvidersResponse(BaseModel):
+    providers: list[VlmProviderInfo]
+
+
+class VlmModelInfo(BaseModel):
+    id: str
+    display_name: str
+    provider: str
+    available: bool
+    capabilities: list[str] = Field(default_factory=list)
+    source: str
+    reason: str | None = None
+
+
+class VlmModelListRequest(BaseModel):
+    provider: str
+    base_url: str | None = None
+    api_key: str | None = None
+
+
+class VlmModelListResponse(BaseModel):
+    provider: str
+    connection_status: str
+    message: str
+    models: list[VlmModelInfo]
+
+
 class JobCreateResponse(BaseModel):
     job_id: str
     status: str

@@ -70,21 +70,30 @@ POSE_AUDIT_USER_PROMPT = (
 
 
 class NvidiaVisionClient:
-    def __init__(self, settings: Settings):
+    def __init__(
+        self,
+        settings: Settings,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        model: str | None = None,
+    ):
         self.settings = settings
+        self.api_key = api_key if api_key is not None else settings.nvidia_api_key
+        self.base_url = (base_url or settings.nvidia_base_url).rstrip("/")
+        self.model = model or settings.nvidia_vlm_model
 
     def generate_initial_prompt(self, image_data_url: str) -> PromptExtractionResult:
-        if not self.settings.has_nvidia_key:
+        if not self.api_key.strip():
             raise RuntimeError("NVIDIA_API_KEY is required for real NVIDIA calls.")
 
         response = requests.post(
-            f"{self.settings.nvidia_base_url.rstrip('/')}/chat/completions",
+            f"{self.base_url}/chat/completions",
             headers={
-                "Authorization": f"Bearer {self.settings.nvidia_api_key}",
+                "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
             },
             json={
-                "model": self.settings.nvidia_vlm_model,
+                "model": self.model,
                 "temperature": 0.2,
                 "messages": [
                     {"role": "system", "content": INITIAL_SYSTEM_PROMPT},
@@ -121,13 +130,13 @@ class NvidiaVisionClient:
 
     def _classify_pose_and_motion(self, image_data_url: str) -> dict:
         response = requests.post(
-            f"{self.settings.nvidia_base_url.rstrip('/')}/chat/completions",
+            f"{self.base_url}/chat/completions",
             headers={
-                "Authorization": f"Bearer {self.settings.nvidia_api_key}",
+                "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
             },
             json={
-                "model": self.settings.nvidia_vlm_model,
+                "model": self.model,
                 "temperature": 0,
                 "messages": [
                     {"role": "system", "content": POSE_AUDIT_SYSTEM_PROMPT},
@@ -153,17 +162,17 @@ class NvidiaVisionClient:
         previous_negative_prompt: str,
         similarity_report: SimilarityScore,
     ) -> PromptExtractionResult:
-        if not self.settings.has_nvidia_key:
+        if not self.api_key.strip():
             raise RuntimeError("NVIDIA_API_KEY is required for real NVIDIA calls.")
 
         response = requests.post(
-            f"{self.settings.nvidia_base_url.rstrip('/')}/chat/completions",
+            f"{self.base_url}/chat/completions",
             headers={
-                "Authorization": f"Bearer {self.settings.nvidia_api_key}",
+                "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
             },
             json={
-                "model": self.settings.nvidia_vlm_model,
+                "model": self.model,
                 "temperature": 0.25,
                 "messages": [
                     {"role": "system", "content": REFINEMENT_SYSTEM_PROMPT},

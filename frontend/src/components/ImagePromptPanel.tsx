@@ -1,7 +1,8 @@
 import { ImageUp, Loader2, Sparkles } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { extractPrompt, type PromptExtractionResult } from "../api/client";
+import { extractPrompt, type PromptExtractionResult, type VlmSelection } from "../api/client";
+import { VlmProviderSelector } from "./VlmProviderSelector";
 
 type Props = {
   onPromptReady: (result: PromptExtractionResult) => void;
@@ -13,6 +14,12 @@ export function ImagePromptPanel({onPromptReady}: Props) {
   const [result, setResult] = useState<PromptExtractionResult | null>(null);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [vlmSelection, setVlmSelection] = useState<VlmSelection>({
+    provider: "nvidia",
+    model: "",
+    baseUrl: "",
+    apiKey: ""
+  });
 
   const fileName = useMemo(() => file?.name ?? "尚未選擇圖片", [file]);
 
@@ -34,7 +41,7 @@ export function ImagePromptPanel({onPromptReady}: Props) {
     setIsLoading(true);
     setError("");
     try {
-      const nextResult = await extractPrompt(file);
+      const nextResult = await extractPrompt(file, vlmSelection);
       setResult(nextResult);
       onPromptReady(nextResult);
     } catch (err) {
@@ -60,6 +67,8 @@ export function ImagePromptPanel({onPromptReady}: Props) {
         />
         {previewUrl ? <img src={previewUrl} alt="上傳預覽" /> : <span>{fileName}</span>}
       </label>
+
+      <VlmProviderSelector value={vlmSelection} onChange={setVlmSelection} />
 
       <button className="primary-button" type="button" onClick={handleSubmit} disabled={isLoading}>
         {isLoading ? <Loader2 className="spin" aria-hidden="true" /> : <Sparkles aria-hidden="true" />}
