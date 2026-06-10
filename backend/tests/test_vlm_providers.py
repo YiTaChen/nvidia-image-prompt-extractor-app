@@ -65,6 +65,7 @@ def test_nvidia_models_marks_discovered_models_available(monkeypatch):
         def json(self):
             return {
                 "data": [
+                    {"id": "01-ai/yi-large"},
                     {"id": "nvidia/nemotron-nano-12b-v2-vl"},
                     {"id": "meta/llama-3.2-90b-vision-instruct"},
                 ]
@@ -82,6 +83,7 @@ def test_nvidia_models_marks_discovered_models_available(monkeypatch):
     unavailable = [model for model in payload["models"] if not model["available"]]
     assert available
     assert unavailable
+    assert all(model["id"] != "01-ai/yi-large" for model in payload["models"])
     assert payload["models"].index(available[-1]) < payload["models"].index(unavailable[0])
 
 

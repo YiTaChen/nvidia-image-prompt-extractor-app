@@ -109,9 +109,12 @@ export function VlmProviderSelector({value, onChange}: Props) {
       const result = await listVlmModels(value);
       setModels(result.models);
       setStatus(result.message);
-      const selectedExists = result.models.some((model) => model.id === value.model);
+      const currentModel = value.model || selectedProvider?.default_model || "";
+      const selectedExists = result.models.some((model) => model.id === currentModel);
       const firstAvailable = result.models.find((model) => model.available) ?? result.models[0];
-      if (!selectedExists && firstAvailable) {
+      if (selectedExists && !value.model) {
+        onChange({...value, model: currentModel});
+      } else if (!selectedExists && firstAvailable) {
         onChange({...value, model: firstAvailable.id});
       }
     } catch (err) {

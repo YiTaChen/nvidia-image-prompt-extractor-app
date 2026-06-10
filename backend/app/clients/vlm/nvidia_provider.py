@@ -51,7 +51,11 @@ class NvidiaVlmProvider(VlmProvider):
                 timeout=30,
             )
             response.raise_for_status()
-            model_ids = _openai_model_ids(response.json())
+            model_ids = [
+                model_id
+                for model_id in _openai_model_ids(response.json())
+                if _is_likely_vision_chat_model(model_id)
+            ]
         except Exception as exc:
             return VlmModelListResponse(
                 provider=self.provider_id,
@@ -77,3 +81,26 @@ def _openai_model_ids(payload: dict) -> list[str]:
     if not isinstance(data, list):
         return []
     return [item.get("id", "") for item in data if isinstance(item, dict)]
+
+
+def _is_likely_vision_chat_model(model_id: str) -> bool:
+    lowered = model_id.lower()
+    if not lowered:
+        return False
+    if "embed" in lowered or "clip" in lowered:
+        return False
+    return any(
+        marker in lowered
+        for marker in (
+            "vision",
+            "multimodal",
+            "vlm",
+            "-vl",
+            "_vl",
+            "vila",
+            "neva",
+            "kosmos",
+            "fuyu",
+            "deplot",
+        )
+    )
