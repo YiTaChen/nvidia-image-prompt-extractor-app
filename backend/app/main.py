@@ -7,7 +7,7 @@ from app.api.routes_prompt import router as prompt_router
 from app.api.routes_vlm import router as vlm_router
 
 
-app = FastAPI(title="NVIDIA Image Prompt Extractor App")
+app = FastAPI(title="Visual Prompt Studio")
 
 app.add_middleware(
     CORSMiddleware,

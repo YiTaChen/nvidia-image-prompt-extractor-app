@@ -1,45 +1,90 @@
-# NVIDIA Image Prompt Extractor App
+# Visual Prompt Studio
 
-Initial TDD implementation for two independent workflows:
+Full-stack AI web app for turning images into reusable generation prompts, generating images from prompts, and improving prompt quality through an automated refinement loop.
 
-- Upload an image and ask a selectable vision-language model provider to generate an image prompt.
-- Enter a prompt and ask Pollinations or ComfyUI text-to-image workflows to generate an image.
-- Run a capped prompt-refinement loop with prompt extraction, image generation, similarity scoring, prompt refinement, progress events, and cancellable background jobs.
+The project was built as a practical AI engineering portfolio piece: a FastAPI backend coordinates vision-language model prompt extraction, image generation providers, similarity scoring, and background jobs, while a React/Vite frontend gives users a clean workflow for comparing and refining results.
 
-## Current VLM Provider Notes
+## Highlights
 
-`NVIDIA_BASE_URL` is used for the hosted VLM chat endpoint.
+- Image-to-prompt workflow: upload an image and generate a structured prompt, negative prompt, and visual analysis with selectable VLM providers.
+- Prompt-to-image workflow: generate images from text prompts through Pollinations or ComfyUI workflows.
+- Iterative refinement loop: extract a prompt, generate an image, compare it with the original, refine the prompt, and repeat until the similarity threshold or capped iteration limit is reached.
+- Multi-provider VLM support: NVIDIA hosted VLM, LM Studio, and Ollama, with provider-specific model discovery and safe API key handling.
+- ComfyUI workflow integration: bundled workflow catalog and API-format workflow patching for prompt, negative prompt, seed, size, checkpoint, and output retrieval.
+- Background job orchestration: queued refinement jobs, cancellable execution, deterministic local image storage, result lookup, and Server-Sent Events progress updates.
+- Test-driven implementation: backend pytest coverage for API routes, clients, VLM parsing, image IO, similarity scoring, jobs, and refinement behavior; frontend Vitest coverage for core UI flows.
 
-Hosted NVIDIA image generation is no longer part of the current development path. The app uses NVIDIA for VLM prompt extraction/refinement and Pollinations or ComfyUI for prompt-to-image generation.
+## Tech Stack
 
-## Multi-Provider VLM Selector
+- Frontend: React 19, TypeScript, Vite, Vitest, Testing Library
+- Backend: FastAPI, Pydantic Settings, Pillow, Requests, pytest
+- AI providers: NVIDIA VLM endpoints, LM Studio, Ollama, Pollinations, ComfyUI
+- Runtime patterns: REST APIs, multipart uploads, Server-Sent Events, background job state, local artifact storage
 
-The image-to-prompt panel includes a two-level VLM selector:
+## How It Works
 
-- First dropdown: provider. Current implemented providers are NVIDIA, LM Studio, and Ollama.
-- Second panel: provider-specific URL/key fields and a model dropdown.
-- Model lists should show available discovered models first, followed by unavailable/reference models.
-- Missing or invalid keys should not hide the reference model catalog.
-- Secret fields must be password-masked and never returned raw from backend responses.
+1. A user uploads a source image.
+2. The backend normalizes the image and sends it to the selected VLM provider.
+3. The VLM returns a detailed positive prompt, negative prompt, and visual analysis.
+4. The user can generate a new image from that prompt with Pollinations or ComfyUI.
+5. For refinement jobs, the backend scores generated images against the original and asks the VLM to improve the best prompt without dropping important subject, pose, clothing, or background details.
 
-Gemini AI Studio remains planned in `AGENT_PROJECT_PLAN.md`.
+The refinement loop is capped at three iterations by default to keep image-generation cost and quota usage predictable.
 
-Detailed implementation tasks are tracked in `AGENT_PROJECT_PLAN.md`.
+## Main Features
 
-Example:
+### Image Prompt Extraction
+
+`POST /api/extract-prompt`
+
+Accepts an uploaded image and optional VLM provider settings. Returns:
+
+- `prompt`
+- `negative_prompt`
+- `analysis`
+
+### Image Generation
+
+`POST /api/generate-image`
+
+Accepts a prompt, negative prompt, size, seed, and optional provider overrides. Supported generation providers:
+
+- `pollinations`
+- `comfyui`
+
+### Refinement Jobs
+
+`POST /api/jobs`
+
+Creates a background refinement job and stores the original image in:
+
+```text
+backend/app/storage/jobs/{job_id}/original.png
+```
+
+Additional job endpoints:
+
+- `GET /api/jobs/{job_id}`
+- `GET /api/jobs/{job_id}/events`
+- `GET /api/jobs/{job_id}/result`
+- `POST /api/jobs/{job_id}/cancel`
+
+## Configuration
+
+Create a `.env` file at the repository root. The app can run with local/mock settings for development, or with real provider credentials.
+
+Example VLM configuration:
 
 ```env
 VLM_PROVIDER=nvidia
 VLM_MODEL=nvidia/nemotron-nano-12b-v2-vl
 NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
-NVIDIA_VLM_MODEL=nvidia/llama-3.1-nemotron-nano-vl-8b-v1
+NVIDIA_API_KEY=your_key_here
 LM_STUDIO_BASE_URL=http://localhost:1234/v1
-LM_STUDIO_VLM_MODEL=
 OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_VLM_MODEL=
 ```
 
-For development, the app defaults to Pollinations for prompt-to-image:
+Example image generation configuration:
 
 ```env
 IMAGE_PROVIDER=pollinations
@@ -48,22 +93,19 @@ POLLINATIONS_MODEL=kontext
 MAX_ITERATIONS=3
 ```
 
-ComfyUI text-to-image settings:
+Example ComfyUI configuration:
 
 ```env
 IMAGE_PROVIDER=comfyui
 COMFYUI_BASE_URL=http://127.0.0.1:8188
 COMFYUI_API_KEY=
 COMFYUI_WORKFLOW=qwen_image_edit_plus_text_to_image
-COMFYUI_IMAGE_TO_IMAGE_WORKFLOW=image_to_image_basic
 COMFYUI_MULTI_IMAGE_EDIT_WORKFLOW=qwen_image_edit_plus_multi_image_edit
 COMFYUI_CHECKPOINT=
 COMFYUI_DENOISE_STRENGTH=0.55
 COMFYUI_TIMEOUT_SECONDS=300
 COMFYUI_POLL_INTERVAL_SECONDS=1
 ```
-
-The current ComfyUI path supports text-to-image generation through `POST /api/generate-image`: it loads a bundled API-format workflow, patches prompt/negative prompt/seed/size/checkpoint, enqueues `/prompt`, polls `/history/{prompt_id}`, fetches `/view`, and returns the image through the existing response shape. Image-to-image and multi-image-edit execution are still planned. Image-to-image support will upload an init image to ComfyUI, patch it into the workflow, and use denoise strength to control how much of the original composition is preserved. The bundled `qwen_image_edit_plus_multi_image_edit` workflow is marked for multi-reference Qwen image editing, not classic VAEEncode image-to-image. Detailed development phases are tracked in `AGENT_PROJECT_PLAN.md`.
 
 Bundled ComfyUI workflow metadata lives in:
 
@@ -73,9 +115,7 @@ backend/app/workflows/comfyui/qwen_image_edit_plus_text_to_image.workflow.json
 backend/app/workflows/comfyui/qwen_image_edit_plus_multi_image_edit.workflow.json
 ```
 
-The backend caps the refinement loop at 3 iterations even if a higher value is requested, to avoid burning free image-generation quota.
-
-## Setup
+## Local Development
 
 Backend:
 
@@ -84,6 +124,20 @@ cd backend
 python3 -m venv .venv
 .venv/bin/python -m pip install -e '.[test]'
 .venv/bin/python -m pytest
+```
+
+Run the backend:
+
+```bash
+cd backend
+.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+Run with mock AI clients:
+
+```bash
+cd backend
+USE_MOCK_NVIDIA=true .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
 Frontend:
@@ -95,23 +149,7 @@ npm test
 npm run build
 ```
 
-## Run Locally
-
-Backend with real NVIDIA settings:
-
-```bash
-cd backend
-.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
-```
-
-Backend with mock NVIDIA clients:
-
-```bash
-cd backend
-USE_MOCK_NVIDIA=true .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
-```
-
-Frontend:
+Run the frontend:
 
 ```bash
 cd frontend
@@ -124,97 +162,23 @@ Open:
 http://127.0.0.1:5173/
 ```
 
-## Implemented Endpoints
+## API Overview
 
-`POST /api/extract-prompt`
+- `GET /api/health`
+- `POST /api/extract-prompt`
+- `GET /api/vlm/providers`
+- `POST /api/vlm/models`
+- `POST /api/generate-image`
+- `POST /api/refine-image`
+- `POST /api/jobs`
+- `GET /api/jobs/{job_id}`
+- `GET /api/jobs/{job_id}/events`
+- `GET /api/jobs/{job_id}/result`
+- `POST /api/jobs/{job_id}/cancel`
+- `GET /api/image-generation-config`
+- `GET /api/image-generation/providers`
+- `GET /api/image-generation/workflows`
 
-- Multipart form fields: `image`, optional `vlm_provider`, `vlm_model`, `vlm_base_url`, `vlm_api_key`
-- Returns: `prompt`, `negative_prompt`, `analysis`
+## Resume Summary
 
-`GET /api/vlm/providers`
-
-- Returns selectable VLM providers and safe default metadata.
-- Does not return raw API keys.
-
-`POST /api/vlm/models`
-
-- JSON body: `provider`, optional `base_url`, optional `api_key`
-- Returns available provider-discovered models first, then built-in reference models.
-- Keeps reference models visible when a key is missing or a local LM Studio/Ollama server is unavailable.
-
-`POST /api/generate-image`
-
-- JSON body: `prompt`, `negative_prompt`, `width`, `height`, `seed`, optional `image_provider`, `image_base_url`, `image_api_key`, `image_model`, `image_workflow`
-- Supported providers: `pollinations`, `comfyui`
-- Returns: `image_base64`, `mime_type`, `model`, optional `provider`, `workflow`, `seed`, `mode`, `metadata`
-
-`POST /api/refine-image`
-
-- Multipart form fields: `image`, `threshold`, `max_iterations`
-- Runs image prompt extraction, prompt-to-image generation, similarity scoring, and prompt refinement.
-- Stops when the threshold is reached or the capped max iteration count is reached.
-
-`POST /api/jobs`
-
-- Multipart form fields: `image`, `threshold`, `max_iterations`
-- Creates a queued background refinement job and immediately stores the normalized original image.
-- Returns: `job_id`, `status`
-
-`GET /api/jobs/{job_id}`
-
-- Returns job status: `queued`, `running`, `completed`, `failed`, or `cancelled`.
-- Includes current iteration, threshold, max iterations, progress events, and result metadata when available.
-
-`GET /api/jobs/{job_id}/events`
-
-- Server-Sent Events stream for realtime progress.
-- Emits queued/running/iteration/completed/failed/cancelled events.
-
-`GET /api/jobs/{job_id}/result`
-
-- Returns the completed `RefinementResult`.
-- Returns `409 Conflict` if the job is not completed yet.
-
-`POST /api/jobs/{job_id}/cancel`
-
-- Cancels a queued or running job.
-
-`GET /api/image-generation-config`
-
-- Returns the active prompt-to-image provider, model, base URL, and whether image generation is configured.
-
-`GET /api/image-generation/providers`
-
-- Returns safe Pollinations and ComfyUI provider metadata.
-- Does not return raw API keys.
-
-`GET /api/image-generation/workflows`
-
-- Returns bundled ComfyUI workflow templates and capabilities.
-
-## Local Job Storage
-
-Job files are stored in deterministic local paths and ignored by Git:
-
-```text
-backend/app/storage/jobs/{job_id}/original.png
-backend/app/storage/jobs/{job_id}/generated/{iteration}.png
-```
-
-Each refinement attempt records the generated image storage path in the API result.
-
-## Similarity Scoring
-
-The score is foreground-person weighted. It still reports whole-image histogram and hash scores, but final similarity now also uses subject-region layout, edge layout, and `critical_detail_score` so matching backgrounds cannot hide incorrect people, hair color, clothing, or pose.
-
-## Prompt Refinement Guardrails
-
-Each loop still compares the original image against the current generated image. When a generated image misses the threshold, the next prompt is refined from the best-scoring attempt so far, not blindly from the latest attempt. Refined prompts are guarded against regression: if the VLM returns an overly short generic prompt or drops locked action/pose details such as walking direction, viewer-left/viewer-right placement, hand contact, bouquet, clothing, hair, or background anchors, the app rejects that degraded prompt and appends a foreground-fidelity correction to the best prompt instead.
-
-## Test Fixture
-
-The sample image provided by the user is stored at:
-
-```text
-backend/tests/fixtures/sample.png
-```
+Built a full-stack AI image workflow platform with FastAPI and React that extracts generation prompts from images using VLM providers, generates new images through Pollinations or ComfyUI, and runs an automated similarity-guided prompt refinement loop with background jobs, SSE progress updates, and comprehensive backend/frontend tests.

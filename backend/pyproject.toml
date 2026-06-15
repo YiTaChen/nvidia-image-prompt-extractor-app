@@ -1,7 +1,7 @@
 [project]
-name = "nvidia-image-prompt-extractor-backend"
+name = "visual-prompt-studio-backend"
 version = "0.1.0"
-description = "Backend for extracting prompts from images and generating images with NVIDIA APIs."
+description = "Backend for extracting prompts from images, generating images, and refining prompts across AI providers."
 requires-python = ">=3.11"
 dependencies = [
   "fastapi>=0.115.0",

@@ -12,7 +12,7 @@ export default function App() {
   return (
     <main>
       <header>
-        <h1>NVIDIA 圖片 Prompt 提取 App</h1>
+        <h1>Visual Prompt Studio</h1>
       </header>
       <div className="workspace">
         <ImagePromptPanel onPromptReady={setExtractedPrompt} />
